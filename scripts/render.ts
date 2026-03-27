@@ -1,191 +1,207 @@
 /**
  * render.ts — headless SVG renderer for the cycloid machine.
  *
- * Usage:
- *   npx tsx scripts/render.ts              # renders output/experiment.svg
- *   npx tsx scripts/render.ts --open       # renders + opens in browser
+ * Reads a single ExperimentConfig from scripts/params.ts.
+ * Every tuneable knob is in that config — nothing hardcoded here.
  *
- * Reads config from scripts/params.ts — edit that file between runs.
+ * Usage:
+ *   pnpm render                           # render to output/
+ *   pnpm render -- --notes "description"  # render + tag with notes
+ *   pnpm render -- --open                 # render + open in viewer
  */
 
-import { writeFileSync, mkdirSync, existsSync, readFileSync, readdirSync } from "node:fs";
+import { writeFileSync, mkdirSync, existsSync, readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
-import { penPosition } from "../src/engine";
-import type { MachineConfig } from "../src/engine";
-import { machine, passes, steps, width, height, background, lineWidth, target } from "./params";
+import { penPosition, epicyclicPenPosition } from "../src/engine";
+import type { MachineConfig, EpicyclicConfig } from "../src/engine";
+import {
+  isEpicyclic, getSpeed, getTableTeeth, getDriveTeeth, getLineWidth, tableRotationDeg,
+} from "./experiment";
+import type { ExperimentConfig } from "./experiment";
+import cfg from "./params";
 
 const outDir = "output";
 mkdirSync(outDir, { recursive: true });
 
+// ── Pen position ────────────────────────────────────────────
+
+function getPenPosition(theta: number, phaseOffset: number): { x: number; y: number } {
+  if (isEpicyclic(cfg)) {
+    const ec = phaseOffset === 0 ? cfg.epicyclic : applyEpicyclicPhase(cfg.epicyclic, phaseOffset);
+    return epicyclicPenPosition(ec, theta);
+  }
+  if (cfg.machine) {
+    const mc = phaseOffset === 0 ? cfg.machine : applyMachinePhase(cfg.machine, phaseOffset);
+    return penPosition(mc, theta);
+  }
+  throw new Error("No machine or epicyclic config in params.ts");
+}
+
+function applyMachinePhase(m: MachineConfig, off: number): MachineConfig {
+  return {
+    ...m,
+    xArm: { gears: m.xArm.gears.map(g => ({ ...g, phase: g.phase + off })) },
+    yArm: { gears: m.yArm.gears.map(g => ({ ...g, phase: g.phase + off })) },
+  };
+}
+
+function applyEpicyclicPhase(e: EpicyclicConfig, off: number): EpicyclicConfig {
+  return { ...e, orbits: e.orbits.map(o => ({ ...o, phase: o.phase + off })) };
+}
+
+// ── SVG rendering ───────────────────────────────────────────
+
 function renderSVG(): string {
-  const cx = width / 2;
-  const cy = height / 2;
+  const cx = cfg.width / 2;
+  const cy = cfg.height / 2;
+  const speed = getSpeed(cfg);
+  const lw = getLineWidth(cfg);
 
   const lines: string[] = [];
-  lines.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`);
+  lines.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${cfg.width}" height="${cfg.height}" viewBox="0 0 ${cfg.width} ${cfg.height}">`);
 
-  if (background !== "none") {
-    lines.push(`  <rect width="${width}" height="${height}" fill="${background}" />`);
+  if (cfg.background !== "none") {
+    lines.push(`  <rect width="${cfg.width}" height="${cfg.height}" fill="${cfg.background}" />`);
   }
 
-  for (const pass of passes) {
-    // Build a config with phaseOffset applied to every gear
-    const cfg = applyPhaseOffset(machine, pass.phaseOffset);
-
-    // Trace the path
-    const points: string[] = [];
+  for (const pass of cfg.passes) {
+    const pts: string[] = [];
     let theta = 0;
-    for (let i = 0; i <= steps; i++) {
-      const p = penPosition(cfg, theta);
+    for (let i = 0; i <= cfg.steps; i++) {
+      const p = getPenPosition(theta, pass.phaseOffset);
       const x = (cx + p.x).toFixed(2);
       const y = (cy + p.y).toFixed(2);
-      if (i === 0) {
-        points.push(`M${x},${y}`);
-      } else {
-        points.push(`L${x},${y}`);
-      }
-      theta += cfg.speed;
+      pts.push(i === 0 ? `M${x},${y}` : `L${x},${y}`);
+      theta += speed;
     }
-
-    lines.push(`  <path d="${points.join(" ")}" fill="none" stroke="${pass.color}" stroke-width="${lineWidth}" stroke-linecap="round" stroke-linejoin="round" opacity="0.5" />`);
+    lines.push(`  <path d="${pts.join(" ")}" fill="none" stroke="${pass.color}" stroke-width="${lw}" stroke-linecap="round" stroke-linejoin="round" opacity="${cfg.opacity}" />`);
   }
 
   lines.push("</svg>");
   return lines.join("\n");
 }
 
-/**
- * Clone the machine config with phaseOffset added to all gear phases.
- */
-function applyPhaseOffset(cfg: MachineConfig, offset: number): MachineConfig {
-  if (offset === 0) return cfg;
-  return {
-    ...cfg,
-    xArm: {
-      gears: cfg.xArm.gears.map(g => ({ ...g, phase: g.phase + offset })),
-    },
-    yArm: {
-      gears: cfg.yArm.gears.map(g => ({ ...g, phase: g.phase + offset })),
-    },
-  };
-}
-
-// ---- Experiment tracking ----
+// ── CSV tracking ────────────────────────────────────────────
 
 const csvFile = `${outDir}/experiments.csv`;
-const csvHeader = "id,timestamp,steps,passes,colors,drive_teeth,x_arm_gears,y_arm_gears,table_teeth,speed,line_width,width,height,background,notes,svg_file,png_file,target";
+const csvHeader = [
+  "id", "timestamp", "target", "mode",
+  "steps", "passes", "colors", "opacity",
+  "drive_teeth", "x_arm_gears", "y_arm_gears", "table_teeth",
+  "speed", "line_width", "width", "height", "background",
+  "notes", "svg_file", "png_file",
+].join(",");
 
-/** Get the next experiment ID by scanning existing CSV rows */
 function nextExperimentId(): number {
   if (!existsSync(csvFile)) return 1;
   const content = readFileSync(csvFile, "utf-8").trim();
-  const rows = content.split("\n").slice(1); // skip header
+  const rows = content.split("\n").slice(1);
   if (rows.length === 0) return 1;
-  const lastId = Math.max(...rows.map(r => parseInt(r.split(",")[0]!) || 0));
-  return lastId + 1;
+  return Math.max(...rows.map(r => parseInt(r.split(",")[0]!) || 0)) + 1;
 }
 
-/** Format gear array as compact string: "60T/R200/φ0 → 30T/R100/φ1.57" */
-function fmtGears(arm: MachineConfig["xArm"]): string {
-  return arm.gears
-    .map(g => `${g.teeth}T/R${g.crankRadius}/φ${g.phase.toFixed(2)}`)
-    .join(" → ");
+function fmtConfigForCsv(): { xGears: string; yGears: string } {
+  if (cfg.epicyclic) {
+    const desc = cfg.epicyclic.orbits
+      .map(o => `ω${o.speed}/R${o.radius}/φ${o.phase.toFixed(2)}`)
+      .join(" → ");
+    return { xGears: `epicyclic: ${desc}`, yGears: "—" };
+  }
+  if (cfg.machine) {
+    const fmt = (arm: MachineConfig["xArm"]) => arm.gears
+      .map(g => `${g.teeth}T/R${g.crankRadius}/φ${g.phase.toFixed(2)}`)
+      .join(" → ");
+    return { xGears: fmt(cfg.machine.xArm), yGears: fmt(cfg.machine.yArm) };
+  }
+  return { xGears: "—", yGears: "—" };
 }
 
-/** Escape a value for CSV (wrap in quotes if it contains commas) */
 function csvVal(v: string | number): string {
   const s = String(v);
   return s.includes(",") || s.includes('"') ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
-/** Migrate existing CSV to add target column if missing */
-function ensureTargetColumn(): void {
-  if (!existsSync(csvFile)) return;
-  const lines = readFileSync(csvFile, "utf-8").split("\n");
-  if (lines[0] && !lines[0].includes(",target")) {
-    lines[0] = lines[0] + ",target";
-    writeFileSync(csvFile, lines.join("\n"));
-  }
-}
-
-/** Append one row to experiments.csv */
 function logExperiment(id: number, svgFile: string, pngFile: string, notes: string): void {
-  ensureTargetColumn();
+  // Create file with header if needed
   if (!existsSync(csvFile)) {
-    writeFileSync(csvFile, csvHeader + "\n");
+    writeFileSync(csvFile, `${csvHeader}\n`);
   }
-  const colors = passes.map(p => p.color).join(";");
+
+  const colors = cfg.passes.map(p => p.color).join(";");
+  const { xGears, yGears } = fmtConfigForCsv();
+  const mode = isEpicyclic(cfg) ? "epicyclic" : "linear";
+
   const row = [
     id,
     new Date().toISOString(),
-    steps,
-    passes.length,
+    csvVal(cfg.target),
+    mode,
+    cfg.steps,
+    cfg.passes.length,
     csvVal(colors),
-    machine.driveTeeth,
-    csvVal(fmtGears(machine.xArm)),
-    csvVal(fmtGears(machine.yArm)),
-    machine.tableTeeth || 0,
-    machine.speed,
-    lineWidth,
-    width,
-    height,
-    csvVal(background),
+    cfg.opacity,
+    getDriveTeeth(cfg),
+    csvVal(xGears),
+    csvVal(yGears),
+    getTableTeeth(cfg) || 0,
+    getSpeed(cfg),
+    cfg.lineWidth,
+    cfg.width,
+    cfg.height,
+    csvVal(cfg.background),
     csvVal(notes),
     svgFile,
     pngFile,
-    csvVal(target),
   ].join(",");
-  writeFileSync(csvFile, readFileSync(csvFile, "utf-8") + row + "\n");
+
+  writeFileSync(csvFile, `${readFileSync(csvFile, "utf-8")}${row}\n`);
 }
 
-/** Try to convert SVG → PNG via ImageMagick or Inkscape */
+// ── PNG conversion ──────────────────────────────────────────
+
 function tryConvertPng(svgPath: string, pngPath: string): boolean {
+  const dim = Math.max(cfg.width, cfg.height);
   try {
-    execSync(`convert "${svgPath}" -resize 1600x1600 "${pngPath}" 2>/dev/null`, { stdio: "ignore" });
+    execSync(`convert "${svgPath}" -resize ${dim}x${dim} "${pngPath}" 2>/dev/null`, { stdio: "ignore" });
     return true;
   } catch { /* ignore */ }
   try {
-    execSync(`inkscape "${svgPath}" --export-type=png --export-filename="${pngPath}" --export-width=1600 2>/dev/null`, { stdio: "ignore" });
+    execSync(`inkscape "${svgPath}" --export-type=png --export-filename="${pngPath}" --export-width=${dim} 2>/dev/null`, { stdio: "ignore" });
     return true;
   } catch { /* ignore */ }
   return false;
 }
 
-// ---- ANSI helpers ----
-const c = {
-  reset: "\x1b[0m",
-  bold:  "\x1b[1m",
-  dim:   "\x1b[2m",
-  cyan:  "\x1b[36m",
-  green: "\x1b[32m",
-  yellow:"\x1b[33m",
-  blue:  "\x1b[34m",
-  magenta:"\x1b[35m",
-  red:   "\x1b[31m",
-  white: "\x1b[97m",
+// ── ANSI helpers ────────────────────────────────────────────
+
+const a = {
+  reset: "\x1b[0m", bold: "\x1b[1m", dim: "\x1b[2m",
+  cyan: "\x1b[36m", green: "\x1b[32m", yellow: "\x1b[33m",
+  blue: "\x1b[34m", magenta: "\x1b[35m", red: "\x1b[31m", white: "\x1b[97m",
 };
-const bold  = (s: string) => `${c.bold}${s}${c.reset}`;
-const dim   = (s: string) => `${c.dim}${s}${c.reset}`;
-const cyan  = (s: string) => `${c.cyan}${s}${c.reset}`;
-const green = (s: string) => `${c.green}${s}${c.reset}`;
-const yellow= (s: string) => `${c.yellow}${s}${c.reset}`;
-const blue  = (s: string) => `${c.blue}${s}${c.reset}`;
+const bold  = (s: string) => `${a.bold}${s}${a.reset}`;
+const dim   = (s: string) => `${a.dim}${s}${a.reset}`;
+const cyan  = (s: string) => `${a.cyan}${s}${a.reset}`;
+const green = (s: string) => `${a.green}${s}${a.reset}`;
+const yellow = (s: string) => `${a.yellow}${s}${a.reset}`;
+const blue  = (s: string) => `${a.blue}${s}${a.reset}`;
 
 function fmtSteps(n: number): string {
   return n >= 1000 ? `${(n / 1000).toFixed(0)}k` : String(n);
 }
 
-function tableRotationDeg(): string {
-  if (!machine.tableTeeth) return "off";
-  const totalTheta = steps * machine.speed;
-  const rotRad = totalTheta * (machine.driveTeeth / machine.tableTeeth);
-  const deg = (rotRad * 180 / Math.PI) % 360;
-  return `${deg.toFixed(0)}° total`;
+function colorToAnsi(hex: string): number {
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  if (r > 0.6 && g < 0.4) return 196;
+  if (b > 0.5 && g > 0.5) return 51;
+  if (r > 0.6 && g > 0.4 && b < 0.3) return 214;
+  return 255;
 }
 
-// ---- Main ----
+// ── Main ────────────────────────────────────────────────────
 
-// Accept optional notes via --notes "some text"
 const notesIdx = process.argv.indexOf("--notes");
 const notes = notesIdx !== -1 ? (process.argv[notesIdx + 1] ?? "") : "";
 
@@ -197,60 +213,55 @@ console.log(divider);
 console.log(`${bold(cyan(`Experiment #${expId}`))}  ${dim(new Date().toLocaleTimeString())}`);
 if (notes) console.log(`${yellow("📝")} ${yellow(notes)}`);
 console.log(divider);
-console.log(`  ${dim("steps")}   ${bold(fmtSteps(steps))}    ${dim("drive")}  ${machine.driveTeeth}T    ${dim("canvas")} ${width}×${height}`);
-console.log(`  ${dim("passes")}  ${bold(String(passes.length))} ${passes.map(p => `${c.bold}\x1b[38;5;${colorToAnsi(p.color)}m●${c.reset}`).join(" ")}    ${dim("table")}  ${machine.tableTeeth ? `${machine.tableTeeth}T → ${tableRotationDeg()}` : blue("off")}`);
-console.log(`  ${dim("X arm")}   ${machine.xArm.gears.map(g => `${g.teeth}T/R${g.crankRadius}`).join(cyan(" → "))}`);
-console.log(`  ${dim("Y arm")}   ${machine.yArm.gears.map(g => `${g.teeth}T/R${g.crankRadius}`).join(cyan(" → "))}`);
-console.log(divider);
 
-/** Map a hex color to the nearest ANSI 256 color index (rough approximation) */
-function colorToAnsi(hex: string): number {
-  const r = parseInt(hex.slice(1, 3), 16) / 255;
-  const g = parseInt(hex.slice(3, 5), 16) / 255;
-  const b = parseInt(hex.slice(5, 7), 16) / 255;
-  if (r > 0.6 && g < 0.4) return 196; // red/pink
-  if (b > 0.5 && g > 0.5) return 51;  // cyan
-  if (r > 0.6 && g > 0.4 && b < 0.3) return 214; // orange
-  return 255; // white
+const modeLabel = isEpicyclic(cfg) ? `${a.magenta}EPICYCLIC${a.reset}` : "LINEAR";
+console.log(`  ${dim("mode")}    ${bold(modeLabel)}    ${dim("canvas")} ${cfg.width}×${cfg.height}`);
+console.log(`  ${dim("steps")}   ${bold(fmtSteps(cfg.steps))}    ${dim("table")}  ${getTableTeeth(cfg) ? `${getTableTeeth(cfg)}T → ${tableRotationDeg(cfg)}` : blue("off")}`);
+console.log(`  ${dim("passes")}  ${bold(String(cfg.passes.length))} ${cfg.passes.map(p => `${a.bold}\x1b[38;5;${colorToAnsi(p.color)}m●${a.reset}`).join(" ")}    ${dim("opacity")} ${cfg.opacity}    ${dim("lw")} ${cfg.lineWidth}`);
+
+if (isEpicyclic(cfg)) {
+  for (let i = 0; i < cfg.epicyclic.orbits.length; i++) {
+    const o = cfg.epicyclic.orbits[i]!;
+    const dir = o.speed < 0 ? "↻" : "↺";
+    console.log(`  ${dim(`orbit${i + 1}`)}  ${dir} ω=${o.speed} R=${o.radius} φ=${o.phase.toFixed(2)}`);
+  }
+} else if (cfg.machine) {
+  console.log(`  ${dim("X arm")}   ${cfg.machine.xArm.gears.map(g => `${g.teeth}T/R${g.crankRadius}`).join(cyan(" → "))}`);
+  console.log(`  ${dim("Y arm")}   ${cfg.machine.yArm.gears.map(g => `${g.teeth}T/R${g.crankRadius}`).join(cyan(" → "))}`);
 }
+
+console.log(divider);
 
 const t0 = performance.now();
 process.stdout.write("  Rendering…");
 const svg = renderSVG();
 const elapsed = (performance.now() - t0).toFixed(0);
-process.stdout.write(`\r  ${green("✓")} Done in ${bold(elapsed + "ms")}  ${dim(`(${(svg.length / 1024).toFixed(0)} KB SVG)`)}\n`);
+process.stdout.write(`\r  ${green("✓")} Done in ${bold(`${elapsed}ms`)}  ${dim(`(${(svg.length / 1024).toFixed(0)} KB SVG)`)}\n`);
 
-// Save numbered + latest files
 const svgName = `exp-${padId}.svg`;
 const pngName = `exp-${padId}.png`;
 const svgPath = `${outDir}/${svgName}`;
 const pngPath = `${outDir}/${pngName}`;
-const latestSvg = `${outDir}/experiment.svg`;
-const latestPng = `${outDir}/experiment.png`;
 
 writeFileSync(svgPath, svg);
-writeFileSync(latestSvg, svg);
+writeFileSync(`${outDir}/experiment.svg`, svg);
 
 process.stdout.write("  Converting PNG…");
 const hasPng = tryConvertPng(svgPath, pngPath);
 if (hasPng) {
-  try { execSync(`cp "${pngPath}" "${latestPng}"`, { stdio: "ignore" }); } catch { /* ignore */ }
+  try { execSync(`cp "${pngPath}" "${outDir}/experiment.png"`, { stdio: "ignore" }); } catch { /* ignore */ }
   process.stdout.write(`\r  ${green("✓")} PNG  → ${cyan(pngPath)}\n`);
 } else {
-  process.stdout.write(`\r  ${dim("○")} PNG conversion unavailable (no ImageMagick/Inkscape)\n`);
+  process.stdout.write(`\r  ${dim("○")} PNG conversion unavailable\n`);
 }
 console.log(`  ${dim("SVG")}  → ${cyan(svgPath)}`);
 
-// Log to CSV
 logExperiment(expId, svgName, hasPng ? pngName : "", notes);
 console.log(`  ${dim("CSV")}  → ${cyan(csvFile)}`);
 console.log(divider);
 
-// Optionally open
 if (process.argv.includes("--open")) {
   try {
     execSync(`xdg-open ${svgPath} 2>/dev/null || open ${svgPath} 2>/dev/null`, { stdio: "ignore" });
-  } catch {
-    // ignore
-  }
+  } catch { /* ignore */ }
 }

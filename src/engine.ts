@@ -102,6 +102,71 @@ export function penPosition(config: MachineConfig, theta: number): { x: number; 
   return { x: xDisp, y: yDisp };
 }
 
+/* ═══════════════════════════════════════════════════════════════
+ * EPICYCLIC ENGINE — nested circular orbits ("wheels on wheels")
+ *
+ * Each orbit is a gear mounted on the arm of the previous gear,
+ * rotating at its own speed. The pen rides on the outermost gear.
+ *
+ * Pen position:
+ *   x = Σ radius_i × cos(speed_i × θ + phase_i)
+ *   y = Σ radius_i × sin(speed_i × θ + phase_i)
+ *
+ * Negative speed = clockwise rotation (gear meshes externally).
+ * Positive speed = counter-clockwise (gear meshes internally or belt).
+ *
+ * This naturally produces spirograph / Fourier epicycle curves.
+ * ═══════════════════════════════════════════════════════════════ */
+
+export interface Orbit {
+  /** Arm length — distance from parent gear's center to this gear's center */
+  radius: number;
+  /** Rotation speed multiplier (negative = clockwise) */
+  speed: number;
+  /** Initial phase offset in radians */
+  phase: number;
+}
+
+export interface EpicyclicConfig {
+  /** Nested circular orbits — pen is at the tip of the last one */
+  orbits: Orbit[];
+  /** Paper table teeth (0 = no table rotation) */
+  tableTeeth: number;
+  /** Motor drive gear teeth (for table speed calculation) */
+  driveTeeth: number;
+  /** Radians of motor rotation per step */
+  speed: number;
+  /** Stroke line width in px */
+  lineWidth: number;
+}
+
+/**
+ * Compute pen position for epicyclic (wheels-on-wheels) config.
+ */
+export function epicyclicPenPosition(config: EpicyclicConfig, theta: number): { x: number; y: number } {
+  let x = 0;
+  let y = 0;
+  for (const orbit of config.orbits) {
+    const angle = orbit.speed * theta + orbit.phase;
+    x += orbit.radius * Math.cos(angle);
+    y += orbit.radius * Math.sin(angle);
+  }
+
+  // Paper table rotation (same as linear model)
+  if (config.tableTeeth > 0) {
+    const tableSpeed = config.driveTeeth / config.tableTeeth;
+    const tableAngle = -tableSpeed * theta;
+    const cosA = Math.cos(tableAngle);
+    const sinA = Math.sin(tableAngle);
+    return {
+      x: x * cosA - y * sinA,
+      y: x * sinA + y * cosA,
+    };
+  }
+
+  return { x, y };
+}
+
 /* ---- Defaults ---- */
 
 export function defaultGear(teeth = 60, crankRadius = 80, phase = 0): Gear {
