@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch, toRaw } from "vue";
 import { config, motorTheta, running } from "../store";
-import { gearSpeeds, penPosition, type GearArm } from "../engine";
+import { gearSpeeds, penPosition } from "../engine";
+import type { GearArm } from "../engine";
 
 const canvasEl = ref<HTMLCanvasElement | null>(null);
 let ctx: CanvasRenderingContext2D | null = null;
@@ -77,7 +78,7 @@ function draw() {
   ctx.beginPath();
   ctx.moveTo(xArmEndX, xArmEndY);
   ctx.lineTo(penOnTableX, penOnTableY);
-  ctx.strokeStyle = X_COLOR + "40";
+  ctx.strokeStyle = `${X_COLOR}40`;
   ctx.lineWidth = 1.5;
   ctx.setLineDash([3, 3]);
   ctx.stroke();
@@ -87,7 +88,7 @@ function draw() {
   ctx.beginPath();
   ctx.moveTo(yArmEndX, yArmEndY);
   ctx.lineTo(penOnTableX, penOnTableY);
-  ctx.strokeStyle = Y_COLOR + "40";
+  ctx.strokeStyle = `${Y_COLOR}40`;
   ctx.lineWidth = 1.5;
   ctx.setLineDash([3, 3]);
   ctx.stroke();
@@ -170,7 +171,7 @@ function drawGearChain(
 
   // Label
   ctx.font = "9px system-ui, sans-serif";
-  ctx.fillStyle = color + "80";
+  ctx.fillStyle = `${color}80`;
   ctx.textAlign = "left";
   ctx.fillText(label, x, y + 10);
 
@@ -202,7 +203,7 @@ function drawGearChain(
     // Gear disc
     ctx.beginPath();
     ctx.arc(cx, cy, gearR, 0, Math.PI * 2);
-    ctx.strokeStyle = color + "50";
+    ctx.strokeStyle = `${color}50`;
     ctx.lineWidth = 1.5;
     ctx.stroke();
 
@@ -214,14 +215,14 @@ function drawGearChain(
       const ty = cy + gearR * Math.sin(ta);
       ctx.beginPath();
       ctx.arc(tx, ty, 0.8, 0, Math.PI * 2);
-      ctx.fillStyle = color + "30";
+      ctx.fillStyle = `${color}30`;
       ctx.fill();
     }
 
     // Center pivot
     ctx.beginPath();
     ctx.arc(cx, cy, 2.5, 0, Math.PI * 2);
-    ctx.fillStyle = color + "60";
+    ctx.fillStyle = `${color}60`;
     ctx.fill();
 
     // Crank arm
@@ -235,7 +236,7 @@ function drawGearChain(
       ctx.beginPath();
       ctx.moveTo(cx, cy);
       ctx.lineTo(crankX, crankY);
-      ctx.strokeStyle = color + "90";
+      ctx.strokeStyle = `${color}90`;
       ctx.lineWidth = 2;
       ctx.stroke();
 
@@ -248,10 +249,10 @@ function drawGearChain(
 
     // Labels
     ctx.font = "8px system-ui, sans-serif";
-    ctx.fillStyle = color + "90";
+    ctx.fillStyle = `${color}90`;
     ctx.textAlign = "center";
     ctx.fillText(`${gear.teeth}T`, cx, cy - gearR - 4);
-    ctx.fillStyle = color + "60";
+    ctx.fillStyle = `${color}60`;
     ctx.fillText(`×${speed.toFixed(2)}`, cx, cy + gearR + 10);
   }
 }

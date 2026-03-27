@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import SliderField from "./SliderField.vue";
 import { colorState } from "../store";
-import { PALETTES, type ColorMode } from "../colors";
+import { PALETTES } from "../colors";
+import type { ColorMode } from "../colors";
 
 const modes: { id: ColorMode; label: string }[] = [
   { id: "static", label: "Static" },

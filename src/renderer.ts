@@ -55,7 +55,7 @@ export class Renderer {
     }
   }
 
-  toggle() { this.running ? this.pause() : this.start(); }
+  toggle() { if (this.running) { this.pause(); } else { this.start(); } }
   isRunning() { return this.running; }
 
   clear() {

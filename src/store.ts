@@ -2,9 +2,12 @@
  * Reactive store — single source of truth.
  */
 
-import { reactive, ref, type Ref } from "vue";
-import { defaultConfig, defaultGear, type MachineConfig, type Gear } from "./engine";
-import { defaultColorState, type ColorGeneratorState } from "./colors";
+import { reactive, ref } from "vue";
+import type { Ref } from "vue";
+import { defaultConfig, defaultGear } from "./engine";
+import type { MachineConfig, Gear } from "./engine";
+import { defaultColorState } from "./colors";
+import type { ColorGeneratorState } from "./colors";
 import type { Renderer } from "./renderer";
 
 export const config: MachineConfig = reactive(defaultConfig());
