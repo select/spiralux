@@ -1,15 +1,29 @@
 <script setup lang="ts">
+import { computed } from "vue";
 import ThemeSwitcher from "./ThemeSwitcher.vue";
 import PresetSelector from "./PresetSelector.vue";
 import MachineGearPanel from "./MachineGearPanel.vue";
 import GlobalControls from "./GlobalControls.vue";
 import ColorGenerator from "./ColorGenerator.vue";
+import { loadedFromExpId } from "../store";
+
+const banner = computed(() => loadedFromExpId.value);
 </script>
 
 <template>
   <aside
     class="w-full lg:w-[480px] shrink-0 overflow-y-auto bg-surface border-t lg:border-t-0 lg:border-l border-border p-4 flex flex-col gap-4 text-sm transition-colors duration-400"
   >
+    <!-- "Loaded from gallery" banner -->
+    <Transition name="slide-banner">
+      <div v-if="banner !== null"
+        class="-mx-1 flex items-center gap-2 bg-accent/10 border border-accent/30 text-accent rounded-xl px-3 py-2 text-xs animate-fade-in">
+        <span class="text-base leading-none">🚀</span>
+        <span class="flex-1">Loaded experiment <strong>#{{ String(banner).padStart(4, '0') }}</strong> — tweak away!</span>
+        <button @click="loadedFromExpId = null" class="text-accent/60 hover:text-accent transition-colors leading-none text-base">×</button>
+      </div>
+    </Transition>
+
     <!-- Header -->
     <div class="flex items-center justify-between animate-fade-in">
       <h1 class="text-base font-semibold tracking-tight text-primary">
@@ -38,3 +52,19 @@ import ColorGenerator from "./ColorGenerator.vue";
     <div class="h-2 shrink-0" />
   </aside>
 </template>
+
+<style scoped>
+.slide-banner-enter-active, .slide-banner-leave-active {
+  transition: all 0.25s ease;
+}
+.slide-banner-enter-from, .slide-banner-leave-to {
+  opacity: 0;
+  transform: translateY(-6px);
+  max-height: 0;
+}
+.slide-banner-enter-to, .slide-banner-leave-from {
+  opacity: 1;
+  transform: translateY(0);
+  max-height: 60px;
+}
+</style>

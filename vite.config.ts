@@ -21,6 +21,24 @@ export default defineConfig({
     {
       name: "serve-output",
       configureServer(server) {
+        // Serve list of all image files in data/ as JSON
+        server.middlewares.use((req, res, next) => {
+          if (!req.url?.startsWith("/targets.json")) { next(); return; }
+          const dataDir = path.join(process.cwd(), "data");
+          const IMAGE_EXTS = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif"]);
+          try {
+            const files = fs.readdirSync(dataDir)
+              .filter(f => IMAGE_EXTS.has(path.extname(f).toLowerCase()) && !f.startsWith("."))
+              .sort();
+            res.setHeader("Content-Type", "application/json");
+            res.setHeader("Cache-Control", "no-cache");
+            res.end(JSON.stringify(files));
+          } catch {
+            res.setHeader("Content-Type", "application/json");
+            res.end("[]");
+          }
+        });
+
         // Serve output/* at /output/*
         server.middlewares.use("/output", (req, res, next) => {
           const url = decodeURIComponent((req.url ?? "/").split("?")[0]!);

@@ -1,16 +1,13 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from "vue";
+import { onMounted, onUnmounted } from "vue";
 import CanvasView from "./components/CanvasView.vue";
 import Sidebar from "./components/Sidebar.vue";
 import HelpModal from "./components/HelpModal.vue";
 import GalleryView from "./components/GalleryView.vue";
 import {
   rendererRef, running, resetAll, exportPNG,
-  showMachine, showHelp, liveMode,
+  showMachine, showHelp, liveMode, activeView,
 } from "./store";
-
-type View = "studio" | "gallery";
-const activeView = ref<View>("studio");
 
 function handleKeydown(e: KeyboardEvent) {
   const tag = (e.target as HTMLElement).tagName.toLowerCase();
@@ -49,27 +46,36 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeydown));
   <div class="h-full flex flex-col">
 
     <!-- ── Tab bar ──────────────────────────────────────────────────────── -->
-    <nav class="shrink-0 flex items-center gap-1 px-3 py-2 bg-surface border-b border-border">
+    <nav class="shrink-0 bg-surface border-b border-border flex items-end px-2 gap-0.5">
       <button
         @click="activeView = 'studio'"
-        class="flex items-center gap-1.5 text-xs font-medium rounded-lg px-3 py-1.5 transition-colors duration-150"
+        class="relative flex items-center gap-2 px-5 py-3 text-sm font-semibold transition-colors duration-150"
         :class="activeView === 'studio'
-          ? 'bg-accent/15 text-accent border border-accent/30'
-          : 'text-secondary hover:text-primary hover:bg-elevated border border-transparent'"
+          ? 'text-accent'
+          : 'text-secondary hover:text-primary'"
       >
         🌀 Studio
+        <span
+          class="absolute bottom-0 inset-x-0 h-0.5 rounded-t transition-all duration-150"
+          :class="activeView === 'studio' ? 'bg-accent' : 'bg-transparent'"
+        />
       </button>
       <button
         @click="activeView = 'gallery'"
-        class="flex items-center gap-1.5 text-xs font-medium rounded-lg px-3 py-1.5 transition-colors duration-150"
+        class="relative flex items-center gap-2 px-5 py-3 text-sm font-semibold transition-colors duration-150"
         :class="activeView === 'gallery'
-          ? 'bg-accent/15 text-accent border border-accent/30'
-          : 'text-secondary hover:text-primary hover:bg-elevated border border-transparent'"
+          ? 'text-accent'
+          : 'text-secondary hover:text-primary'"
       >
         🔬 Gallery
+        <span
+          class="absolute bottom-0 inset-x-0 h-0.5 rounded-t transition-all duration-150"
+          :class="activeView === 'gallery' ? 'bg-accent' : 'bg-transparent'"
+        />
       </button>
-      <span class="ml-auto text-[10px] text-muted hidden sm:block">
-        <kbd class="inline-block border border-border rounded px-1 py-0.5 font-mono text-[10px] text-muted">G</kbd> toggle view
+      <span class="ml-auto mb-2 text-[10px] text-muted hidden sm:flex items-center gap-1">
+        <kbd class="inline-block border border-border rounded px-1.5 py-0.5 font-mono text-[10px] text-muted">G</kbd>
+        toggle
       </span>
     </nav>
 
