@@ -31,10 +31,16 @@ src/
 
 scripts/
 ├── params.ts                # ← EDIT THIS — machine config for headless experiments
-└── render.ts                # Headless SVG renderer (reads params.ts → output/experiment.svg)
+└── render.ts                # Headless SVG renderer (reads params.ts → output/exp-NNNN.svg + experiments.csv)
 
 docs/
 └── simulation-loop.md       # Guide: iterative pattern matching workflow
+
+output/                      # gitignored
+├── experiments.csv          # Log of ALL experiments with full parameters
+├── exp-0001.svg/.png        # Numbered experiment archive (never overwritten)
+├── exp-0002.svg/.png        # ...
+└── experiment.svg/.png      # Latest render (always overwritten)
 ```
 
 ## Mechanical Model
@@ -55,14 +61,47 @@ Two perpendicular slide arms (X/Y), each with 1–4 belt-connected gears. Each g
 
 `Space` play/pause · `R` reset · `C` clear · `L` live mode · `M` machine · `E` export · `H` help
 
-## Iterative Pattern Matching
+## Experiment Loop (autoresearch style)
 
-To replicate a target image, use the headless renderer loop:
+Renders take ~150ms. Experiments are nearly free. **Stop thinking, start rendering.**
 
-1. Edit `scripts/params.ts` (gear config, passes, steps)
-2. Run `pnpm render`
-3. Compare `output/experiment.svg` to target
-4. Tweak, repeat
+### Setup (once per session)
+
+1. Read `output/experiments.csv` — know what's been tried
+2. Look at PNGs of the best experiments so far + the target image
+3. Identify what to try next
+
+### The Loop (run forever until interrupted)
+
+```
+LOOP FOREVER:
+  1. Edit scripts/params.ts — ONE change per experiment
+  2. pnpm render -- --notes "short description of what changed"
+  3. Look at the output PNG — compare to target
+  4. If closer to target → KEEP (git commit)
+     If same or worse  → DISCARD (git checkout scripts/params.ts)
+  5. Go to 1. Do NOT pause to ask the human.
+```
+
+### Rules
+
+- **Never stop to ask** "should I continue?" — the human may be away. Run until interrupted.
+- **Never over-analyze** — if unsure whether a change will help, just render it and look. The experiment is free.
+- **One change at a time** — so you know what helped or hurt.
+- **Use low steps first** (5k–10k) for fast shape iteration, increase to 80k only for final density tuning.
+- **Always add `--notes`** — your future self needs to know what each experiment tried.
+- **Crashes**: if `pnpm render` fails, fix the obvious bug and re-run. Don't spiral.
+- **If stuck**: re-read the target image, try something radically different, combine near-misses.
+
+### What to tune (in rough priority order)
+
+1. **Gear teeth** → controls lobe count and shape (the most important knob)
+2. **crankRadius** → controls amplitude / lobe size
+3. **Number of gears per arm** → adds harmonics for complex shapes
+4. **tableTeeth** → controls fill density (0 = off for raw shape iteration)
+5. **phase** → rotates/orients the pattern
+6. **passes / colors** → save for last, after single-pass shape is right
+7. **steps** → more = denser lines (keep low during iteration)
 
 Full guide: **[docs/simulation-loop.md](docs/simulation-loop.md)**
 
