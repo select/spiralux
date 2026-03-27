@@ -16,6 +16,8 @@ export const rendererRef: Ref<Renderer | null> = ref(null);
 export const running = ref(false);
 export const motorTheta = ref(0);
 export const showMachine = ref(true);
+export const liveMode = ref(false);
+export const showHelp = ref(false);
 
 export function resetAll() {
   const fresh = defaultConfig();
@@ -52,6 +54,11 @@ export function applyPreset(preset: {
   rendererRef.value?.reset(config);
   running.value = false;
   motorTheta.value = 0;
+
+  // In live mode, immediately preview the preset
+  if (liveMode.value) {
+    rendererRef.value?.drawPreview();
+  }
 }
 
 export function addGear(arm: "x" | "y") {

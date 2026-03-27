@@ -11,36 +11,38 @@ import { config } from "../store";
       Drive &amp; Table
     </span>
 
-    <SliderField
-      v-model="config.driveTeeth"
-      label="Motor Drive Teeth"
-      :min="5"
-      :max="80"
-      :step="1"
-      :decimals="0"
-    />
-    <SliderField
-      v-model="config.tableTeeth"
-      label="Table Teeth (0 = off)"
-      :min="0"
-      :max="400"
-      :step="1"
-      :decimals="0"
-    />
-    <SliderField
-      v-model="config.speed"
-      label="Speed"
-      :min="0.002"
-      :max="0.1"
-      :step="0.002"
-    />
-    <SliderField
-      v-model="config.lineWidth"
-      label="Line Width"
-      :min="0.2"
-      :max="4"
-      :step="0.1"
-      :decimals="1"
-    />
+    <div class="grid grid-cols-2 gap-x-4 gap-y-2.5">
+      <SliderField
+        v-model="config.driveTeeth"
+        label="Drive Teeth"
+        :min="5"
+        :max="80"
+        :step="1"
+        :decimals="0"
+      />
+      <SliderField
+        v-model="config.tableTeeth"
+        label="Table Teeth (0=off)"
+        :min="0"
+        :max="400"
+        :step="1"
+        :decimals="0"
+      />
+      <SliderField
+        v-model="config.speed"
+        label="Speed"
+        :min="0.002"
+        :max="0.1"
+        :step="0.002"
+      />
+      <SliderField
+        v-model="config.lineWidth"
+        label="Line Width"
+        :min="0.2"
+        :max="4"
+        :step="0.1"
+        :decimals="1"
+      />
+    </div>
   </div>
 </template>
