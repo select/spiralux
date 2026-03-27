@@ -21,6 +21,31 @@ interface Experiment {
   notes: string;
   svgFile: string;
   pngFile: string;
+  target: string;  // filename in data/, empty for legacy experiments
+}
+
+interface TargetInfo {
+  file: string;
+  label: string;
+  description: string;
+  bg: string;
+  difficulty: number;
+}
+
+const TARGETS: TargetInfo[] = [
+  { file: "IMG_6777.jpeg",  label: "3-Lobe Trefoil",      description: "Pink / Cyan / Orange · 3 passes",             bg: "#f0f0ec", difficulty: 1 },
+  { file: "IMG_3363.webp",  label: "3-Lobe Interlocking", description: "Purple / Teal / Green · 3 passes",            bg: "#f5f5f0", difficulty: 2 },
+  { file: "IMG_3504.webp",  label: "Trefoil Knot",        description: "White on Charcoal · single pass · complex",  bg: "#1c1c1e", difficulty: 3 },
+  { file: "gandy-1.jpg",    label: "10-Lobe Mandala",     description: "Rainbow · 8 passes · star pattern",           bg: "#faf9f6", difficulty: 3 },
+  { file: "gandy-3.jpg",    label: "Spiral Shell",        description: "Blue / Pink / Yellow · asymmetric",           bg: "#f8f8f5", difficulty: 2 },
+];
+
+function getTarget(file: string): TargetInfo {
+  return TARGETS.find(t => t.file === file) ?? TARGETS[0]!;
+}
+
+function difficultyLabel(d: number): string {
+  return ["★", "★★", "★★★"][d - 1] ?? "★";
 }
 
 // ── CSV parsing ───────────────────────────────────────────────────────────────
@@ -74,6 +99,7 @@ function mapRow(r: Record<string, string>): Experiment {
     notes: r.notes ?? "",
     svgFile: r.svg_file ?? "",
     pngFile: r.png_file ?? "",
+    target: r.target ?? "IMG_6777.jpeg",  // legacy rows default to first target
   };
 }
 
@@ -85,7 +111,7 @@ const sortDesc = ref(true);
 const loading = ref(true);
 const fetchError = ref("");
 const selected = ref<Experiment | null>(null);
-const showTarget = ref(true);
+const filterTarget = ref<string | "all">("all");
 
 // ── Data loading ──────────────────────────────────────────────────────────────
 
@@ -110,6 +136,9 @@ onMounted(loadExperiments);
 
 const filtered = computed(() => {
   let list = [...experiments.value];
+  if (filterTarget.value !== "all") {
+    list = list.filter(e => e.target === filterTarget.value);
+  }
   if (search.value.trim()) {
     const q = search.value.toLowerCase();
     list = list.filter(e =>
@@ -121,6 +150,24 @@ const filtered = computed(() => {
   }
   list.sort((a, b) => sortDesc.value ? b.id - a.id : a.id - b.id);
   return list;
+});
+
+// The target(s) shown in the reference panel — unique targets in current filter
+const visibleTargets = computed(() => {
+  if (filterTarget.value !== "all") return [getTarget(filterTarget.value)];
+  const seen = new Set<string>();
+  const result: TargetInfo[] = [];
+  for (const e of experiments.value) {
+    if (!seen.has(e.target)) { seen.add(e.target); result.push(getTarget(e.target)); }
+  }
+  return result.length ? result : [getTarget("IMG_6777.jpeg")];
+});
+
+// Count experiments per target
+const countByTarget = computed(() => {
+  const m: Record<string, number> = {};
+  for (const e of experiments.value) m[e.target] = (m[e.target] ?? 0) + 1;
+  return m;
 });
 
 // ── Lightbox navigation ───────────────────────────────────────────────────────
@@ -199,59 +246,47 @@ function lightboxIdx(): string {
 <template>
   <div class="flex flex-col h-full bg-base text-primary">
 
-    <!-- ── Header ──────────────────────────────────────────────────────── -->
-    <div class="shrink-0 bg-surface border-b border-border px-4 py-3 flex flex-wrap items-center gap-3">
-
-      <div class="flex items-center gap-2 mr-2">
-        <span class="text-lg">🔬</span>
+    <!-- ── Header row 1: title + search + sort + refresh ──────────────── -->
+    <div class="shrink-0 bg-surface border-b border-border px-4 py-2.5 flex flex-wrap items-center gap-2.5">
+      <div class="flex items-center gap-2 mr-1">
+        <span class="text-base">🔬</span>
         <span class="font-semibold text-primary text-sm tracking-tight">Experiments</span>
         <span v-if="!loading" class="text-xs bg-elevated text-secondary rounded-full px-2 py-0.5">
           {{ experiments.length }}
         </span>
       </div>
 
-      <!-- Search -->
-      <div class="flex-1 min-w-[140px] max-w-xs relative">
-        <input
-          v-model="search"
-          type="search"
-          placeholder="Search notes, gears…"
-          class="w-full bg-elevated border border-border rounded-lg px-3 py-1.5 text-xs text-primary placeholder:text-muted focus:outline-none focus:border-border-focus transition-colors"
-        />
-        <span v-if="search" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted text-xs">
-          {{ filtered.length }}
-        </span>
+      <div class="flex-1 min-w-[130px] max-w-xs relative">
+        <input v-model="search" type="search" placeholder="Search notes, gears…"
+          class="w-full bg-elevated border border-border rounded-lg px-3 py-1.5 text-xs text-primary placeholder:text-muted focus:outline-none focus:border-border-focus transition-colors" />
+        <span v-if="search" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted text-[10px]">{{ filtered.length }}</span>
       </div>
 
-      <!-- Sort toggle -->
-      <button
-        @click="sortDesc = !sortDesc"
-        class="flex items-center gap-1.5 text-xs text-secondary hover:text-primary bg-elevated border border-border rounded-lg px-3 py-1.5 transition-colors"
-        :title="sortDesc ? 'Newest first' : 'Oldest first'"
-      >
-        <span>{{ sortDesc ? "↓" : "↑" }}</span>
-        <span>{{ sortDesc ? "Newest" : "Oldest" }}</span>
+      <button @click="sortDesc = !sortDesc"
+        class="text-xs text-secondary hover:text-primary bg-elevated border border-border rounded-lg px-2.5 py-1.5 transition-colors">
+        {{ sortDesc ? "↓ Newest" : "↑ Oldest" }}
       </button>
 
-      <!-- Target toggle -->
-      <button
-        @click="showTarget = !showTarget"
-        class="flex items-center gap-1.5 text-xs rounded-lg px-3 py-1.5 border transition-colors"
-        :class="showTarget
-          ? 'bg-accent/15 border-accent/30 text-accent'
-          : 'bg-elevated border-border text-secondary hover:text-primary'"
-      >
-        🎯 Target
+      <button @click="loadExperiments" :disabled="loading"
+        class="text-xs text-secondary hover:text-primary bg-elevated border border-border rounded-lg px-2.5 py-1.5 transition-colors disabled:opacity-50">
+        {{ loading ? "…" : "⟳ Reload" }}
       </button>
+    </div>
 
-      <!-- Refresh -->
-      <button
-        @click="loadExperiments"
-        :disabled="loading"
-        class="text-xs text-secondary hover:text-primary bg-elevated border border-border rounded-lg px-3 py-1.5 transition-colors disabled:opacity-50"
-        title="Reload from disk"
-      >
-        {{ loading ? "…" : "⟳" }}
+    <!-- ── Header row 2: target filter pills ───────────────────────────── -->
+    <div class="shrink-0 bg-surface border-b border-border px-4 py-2 flex items-center gap-2 overflow-x-auto">
+      <span class="text-[10px] text-muted uppercase tracking-wider shrink-0 mr-1">Target</span>
+      <button @click="filterTarget = 'all'"
+        class="shrink-0 text-[11px] font-medium rounded-full px-2.5 py-1 border transition-colors whitespace-nowrap"
+        :class="filterTarget === 'all' ? 'bg-accent/15 border-accent/30 text-accent' : 'bg-elevated border-border text-secondary hover:text-primary hover:border-border-focus'">
+        All <span class="ml-1 opacity-60">{{ experiments.length }}</span>
+      </button>
+      <button v-for="t in TARGETS" :key="t.file" @click="filterTarget = t.file"
+        class="shrink-0 text-[11px] font-medium rounded-full px-2.5 py-1 border transition-colors whitespace-nowrap"
+        :class="filterTarget === t.file ? 'bg-accent/15 border-accent/30 text-accent' : 'bg-elevated border-border text-secondary hover:text-primary hover:border-border-focus'">
+        {{ t.label }}
+        <span v-if="countByTarget[t.file]" class="ml-1 opacity-60">{{ countByTarget[t.file] }}</span>
+        <span class="ml-1 opacity-40 text-[9px]">{{ difficultyLabel(t.difficulty) }}</span>
       </button>
     </div>
 
@@ -271,91 +306,76 @@ function lightboxIdx(): string {
         Loading experiments…
       </div>
 
-      <!-- Empty search result -->
+      <!-- Empty -->
+      <div v-else-if="filtered.length === 0 && !search" class="flex flex-col items-center justify-center h-64 gap-2 text-secondary text-sm">
+        <span class="text-3xl">🔬</span>
+        <p>No experiments for this target yet.</p>
+        <code class="text-xs text-muted bg-elevated px-3 py-1.5 rounded">pnpm render -- --notes "first attempt"</code>
+      </div>
       <div v-else-if="filtered.length === 0" class="flex flex-col items-center justify-center h-64 gap-2 text-secondary text-sm">
         <span class="text-3xl">🔍</span>
-        <p>No experiments match "<span class="text-primary">{{ search }}</span>"</p>
-        <button @click="search = ''" class="text-xs text-accent hover:underline">Clear search</button>
+        <p>No results for "<span class="text-primary">{{ search }}</span>"</p>
+        <button @click="search = ''" class="text-xs text-accent hover:underline">Clear</button>
       </div>
 
       <!-- Grid -->
       <div v-else class="grid gap-3" style="grid-template-columns: repeat(auto-fill, minmax(220px, 1fr))">
 
-        <!-- Target reference card (pinned) -->
-        <div
-          v-if="showTarget"
-          class="rounded-xl border-2 border-accent/40 overflow-hidden bg-surface flex flex-col animate-fade-in"
-        >
-          <div class="relative aspect-square bg-canvas overflow-hidden">
-            <img src="/target/IMG_6777.jpeg" alt="Target" class="w-full h-full object-contain" />
+        <!-- Target reference cards (one per visible target) -->
+        <div v-for="t in visibleTargets" :key="t.file"
+          class="rounded-xl border-2 border-accent/40 overflow-hidden bg-surface flex flex-col animate-fade-in">
+          <div class="relative aspect-square overflow-hidden" :style="{ background: t.bg }">
+            <img :src="`/target/${t.file}`" :alt="t.label" class="w-full h-full object-contain" />
             <div class="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
-            <span class="absolute bottom-2 left-2 text-xs font-bold text-white bg-accent/90 rounded-full px-2 py-0.5">
-              🎯 TARGET
-            </span>
+            <span class="absolute top-2 left-2 text-[10px] font-bold text-white bg-accent/90 rounded px-1.5 py-0.5">🎯 TARGET</span>
+            <span class="absolute top-2 right-2 text-[10px] text-white/70">{{ difficultyLabel(t.difficulty) }}</span>
           </div>
-          <div class="px-3 py-2 text-xs text-secondary">
-            3 lobes · pink / cyan / orange · dense mesh fill
+          <div class="px-3 py-2">
+            <div class="text-xs font-medium text-primary">{{ t.label }}</div>
+            <div class="text-[10px] text-muted mt-0.5">{{ t.description }}</div>
           </div>
         </div>
 
         <!-- Experiment cards -->
-        <div
-          v-for="exp in filtered"
-          :key="exp.id"
-          @click="openLightbox(exp)"
-          class="rounded-xl border border-border overflow-hidden bg-surface flex flex-col cursor-pointer hover:border-border-focus hover:shadow-lg transition-all duration-200 animate-fade-in group"
-        >
-          <!-- Thumbnail -->
+        <div v-for="exp in filtered" :key="exp.id" @click="openLightbox(exp)"
+          class="rounded-xl border border-border overflow-hidden bg-surface flex flex-col cursor-pointer hover:border-border-focus hover:shadow-lg transition-all duration-200 animate-fade-in group">
           <div class="relative aspect-square bg-canvas overflow-hidden">
-            <img
-              v-if="thumbUrl(exp)"
-              :src="thumbUrl(exp)"
-              :alt="`Experiment ${exp.id}`"
-              class="w-full h-full object-contain transition-transform duration-300 group-hover:scale-105"
-              loading="lazy"
-            />
-            <div v-else class="w-full h-full flex items-center justify-center text-muted text-xs">
-              No image
-            </div>
+            <img v-if="thumbUrl(exp)" :src="thumbUrl(exp)" :alt="`Experiment ${exp.id}`"
+              class="w-full h-full object-contain transition-transform duration-300 group-hover:scale-105" loading="lazy" />
+            <div v-else class="w-full h-full flex items-center justify-center text-muted text-xs">No image</div>
 
-            <!-- Gradient overlay -->
             <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-80" />
 
-            <!-- ID badge -->
-            <div class="absolute top-2 left-2 text-xs font-mono font-bold text-white/90 bg-black/50 rounded px-1.5 py-0.5">
-              #{{ String(exp.id).padStart(4, "0") }}
+            <div class="absolute top-2 left-2 flex flex-col gap-1">
+              <span class="text-xs font-mono font-bold text-white/90 bg-black/50 rounded px-1.5 py-0.5">
+                #{{ String(exp.id).padStart(4, "0") }}
+              </span>
+              <span v-if="filterTarget === 'all' && exp.target"
+                class="text-[9px] text-white/70 bg-black/40 rounded px-1 py-0.5 leading-none">
+                {{ getTarget(exp.target).label }}
+              </span>
             </div>
 
-            <!-- Color swatches -->
             <div class="absolute top-2 right-2 flex gap-1">
-              <span
-                v-for="color in exp.colors"
-                :key="color"
-                class="w-3 h-3 rounded-full border border-white/30 shadow"
-                :style="{ background: color }"
-              />
+              <span v-for="color in exp.colors" :key="color"
+                class="w-3 h-3 rounded-full border border-white/30 shadow" :style="{ background: color }" />
             </div>
 
-            <!-- Bottom info overlay -->
             <div class="absolute bottom-0 left-0 right-0 px-2 pb-2 pt-4">
               <p class="text-xs text-white/90 line-clamp-2 leading-snug">{{ exp.notes || "—" }}</p>
             </div>
           </div>
 
-          <!-- Card footer -->
           <div class="px-2.5 py-2 flex flex-col gap-1.5 border-t border-border/50">
-            <!-- Params row 1 -->
-            <div class="flex items-center gap-1.5 flex-wrap">
-              <span class="chip">{{ fmtSteps(exp.steps) }} steps</span>
-              <span class="chip">{{ exp.passes }}× pass</span>
-              <span class="chip">tbl {{ tableRotationDeg(exp) }}</span>
-              <span class="chip">lw {{ exp.lineWidth }}</span>
+            <div class="flex items-center gap-1 flex-wrap">
+              <span class="text-[10px] bg-elevated text-muted rounded px-1.5 py-0.5 border border-border/50">{{ fmtSteps(exp.steps) }}steps</span>
+              <span class="text-[10px] bg-elevated text-muted rounded px-1.5 py-0.5 border border-border/50">{{ exp.passes }}×pass</span>
+              <span class="text-[10px] bg-elevated text-muted rounded px-1.5 py-0.5 border border-border/50">tbl {{ tableRotationDeg(exp) }}</span>
+              <span class="text-[10px] bg-elevated text-muted rounded px-1.5 py-0.5 border border-border/50">lw{{ exp.lineWidth }}</span>
             </div>
-            <!-- Gear info -->
-            <div class="text-[10px] text-muted leading-relaxed truncate" :title="`X: ${exp.xArmGears}\nY: ${exp.yArmGears}`">
+            <div class="text-[10px] text-muted truncate" :title="`X: ${exp.xArmGears}\nY: ${exp.yArmGears}`">
               X: {{ exp.xArmGears }}
             </div>
-            <!-- Timestamp -->
             <div class="text-[10px] text-muted">{{ fmtTime(exp.timestamp) }}</div>
           </div>
         </div>
@@ -514,9 +534,6 @@ export default {};
 </script>
 
 <style scoped>
-.chip {
-  @apply text-[10px] bg-elevated text-muted rounded px-1.5 py-0.5 border border-border/50;
-}
 .lightbox-enter-active, .lightbox-leave-active { transition: opacity 0.2s ease; }
 .lightbox-enter-from, .lightbox-leave-to { opacity: 0; }
 </style>

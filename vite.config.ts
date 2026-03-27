@@ -38,15 +38,15 @@ export default defineConfig({
           }
         });
 
-        // Serve the target reference images at /target/*
+        // Serve target reference images at /target/* (files from data/)
         server.middlewares.use("/target", (req, res, next) => {
           const url = decodeURIComponent((req.url ?? "/").split("?")[0]!);
           const name = url === "/" ? "IMG_6777.jpeg" : url.replace(/^\//, "");
-          const allowed = ["IMG_6777.jpeg", "IMG_3504.webp", "nolan-gandy.jpeg"];
-          if (!allowed.includes(name)) { next(); return; }
-          const filePath = path.join(process.cwd(), name);
+          const filePath = path.join(process.cwd(), "data", name);
+          // Security: must stay inside data/
+          if (!filePath.startsWith(path.join(process.cwd(), "data"))) { next(); return; }
           try {
-            if (fs.existsSync(filePath)) {
+            if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
               res.setHeader("Content-Type", MIME[path.extname(filePath).toLowerCase()] ?? "image/jpeg");
               res.setHeader("Cache-Control", "no-cache");
               fs.createReadStream(filePath).pipe(res as NodeJS.WritableStream);

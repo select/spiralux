@@ -12,7 +12,7 @@ import { writeFileSync, mkdirSync, existsSync, readFileSync, readdirSync } from 
 import { execSync } from "node:child_process";
 import { penPosition } from "../src/engine";
 import type { MachineConfig } from "../src/engine";
-import { machine, passes, steps, width, height, background, lineWidth } from "./params";
+import { machine, passes, steps, width, height, background, lineWidth, target } from "./params";
 
 const outDir = "output";
 mkdirSync(outDir, { recursive: true });
@@ -73,7 +73,7 @@ function applyPhaseOffset(cfg: MachineConfig, offset: number): MachineConfig {
 // ---- Experiment tracking ----
 
 const csvFile = `${outDir}/experiments.csv`;
-const csvHeader = "id,timestamp,steps,passes,colors,drive_teeth,x_arm_gears,y_arm_gears,table_teeth,speed,line_width,width,height,background,notes,svg_file,png_file";
+const csvHeader = "id,timestamp,steps,passes,colors,drive_teeth,x_arm_gears,y_arm_gears,table_teeth,speed,line_width,width,height,background,notes,svg_file,png_file,target";
 
 /** Get the next experiment ID by scanning existing CSV rows */
 function nextExperimentId(): number {
@@ -98,8 +98,19 @@ function csvVal(v: string | number): string {
   return s.includes(",") || s.includes('"') ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
+/** Migrate existing CSV to add target column if missing */
+function ensureTargetColumn(): void {
+  if (!existsSync(csvFile)) return;
+  const lines = readFileSync(csvFile, "utf-8").split("\n");
+  if (lines[0] && !lines[0].includes(",target")) {
+    lines[0] = lines[0] + ",target";
+    writeFileSync(csvFile, lines.join("\n"));
+  }
+}
+
 /** Append one row to experiments.csv */
 function logExperiment(id: number, svgFile: string, pngFile: string, notes: string): void {
+  ensureTargetColumn();
   if (!existsSync(csvFile)) {
     writeFileSync(csvFile, csvHeader + "\n");
   }
@@ -122,6 +133,7 @@ function logExperiment(id: number, svgFile: string, pngFile: string, notes: stri
     csvVal(notes),
     svgFile,
     pngFile,
+    csvVal(target),
   ].join(",");
   writeFileSync(csvFile, readFileSync(csvFile, "utf-8") + row + "\n");
 }

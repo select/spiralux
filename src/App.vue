@@ -52,20 +52,24 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeydown));
     <nav class="shrink-0 flex items-center gap-1 px-3 py-2 bg-surface border-b border-border">
       <button
         @click="activeView = 'studio'"
-        class="nav-tab"
-        :class="activeView === 'studio' ? 'nav-tab--active' : 'nav-tab--idle'"
+        class="flex items-center gap-1.5 text-xs font-medium rounded-lg px-3 py-1.5 transition-colors duration-150"
+        :class="activeView === 'studio'
+          ? 'bg-accent/15 text-accent border border-accent/30'
+          : 'text-secondary hover:text-primary hover:bg-elevated border border-transparent'"
       >
         🌀 Studio
       </button>
       <button
         @click="activeView = 'gallery'"
-        class="nav-tab"
-        :class="activeView === 'gallery' ? 'nav-tab--active' : 'nav-tab--idle'"
+        class="flex items-center gap-1.5 text-xs font-medium rounded-lg px-3 py-1.5 transition-colors duration-150"
+        :class="activeView === 'gallery'
+          ? 'bg-accent/15 text-accent border border-accent/30'
+          : 'text-secondary hover:text-primary hover:bg-elevated border border-transparent'"
       >
         🔬 Gallery
       </button>
       <span class="ml-auto text-[10px] text-muted hidden sm:block">
-        <kbd class="kbd">G</kbd> toggle view
+        <kbd class="inline-block border border-border rounded px-1 py-0.5 font-mono text-[10px] text-muted">G</kbd> toggle view
       </span>
     </nav>
 
@@ -88,17 +92,4 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeydown));
   </div>
 </template>
 
-<style scoped>
-.nav-tab {
-  @apply flex items-center gap-1.5 text-xs font-medium rounded-lg px-3 py-1.5 transition-colors duration-150;
-}
-.nav-tab--active {
-  @apply bg-accent/15 text-accent border border-accent/30;
-}
-.nav-tab--idle {
-  @apply text-secondary hover:text-primary hover:bg-elevated border border-transparent;
-}
-.kbd {
-  @apply inline-block border border-border rounded px-1 py-0.5 font-mono text-[10px] text-muted;
-}
-</style>
+

@@ -2,76 +2,74 @@
  * params.ts — THE file to edit between experiments.
  *
  * Change values here, then run:
- *   npx tsx scripts/render.ts
+ *   pnpm render -- --notes "what you tried"
  *
- * Output: output/experiment.svg  (+ output/experiment.png if canvas installed)
+ * ══════════════════════════════════════════════════════════════
+ * CURRENT TARGET: IMG_3504.webp — "Trefoil Knot"
+ * ══════════════════════════════════════════════════════════════
  *
- * The image to replicate: IMG_6777.jpeg
  * Pattern analysis:
- *   - 3 large rounded lobes arranged ~120° apart (trefoil / 3-fold symmetry)
- *   - Each lobe is a dense filled mesh of fine lines (many revolutions)
- *   - The lobes overlap at a common center with tight spiraling
- *   - Drawn in 3 separate passes with 3 colors: pink, cyan/blue, orange
- *   - Each color traces the SAME shape, rotated ~120° from the others
- *   - Very fine line weight, high line count (many motor revolutions)
+ *   - DARK background (#1c1c1e charcoal), single light/white pass
+ *   - 3-fold symmetry — three large outer arcs forming a trefoil knot
+ *   - Three inner enclosed "bubble" regions from arc interlocking
+ *   - Ultra-dense mesh fill — many motor revolutions
+ *   - Complex harmonic structure: multiple gear harmonics per arm
+ *   - The outer arcs are large, sweeping (~full canvas width)
+ *   - The inner bubbles are tighter/smaller
  *
- * This strongly suggests:
- *   - A simple 2-gear ratio producing a 3-lobed curve (like teeth ratio 3:1)
- *   - Paper table rotating slowly to fill the lobes with dense lines
- *   - 3 drawing passes with pen color changed + ~120° phase shift each time
+ * Strategy:
+ *   1. Start simple: find a gear ratio that produces a knot-like outline
+ *   2. Low steps first to see the base curve shape
+ *   3. Then add table rotation to fill with mesh
+ *   4. Build up harmonic complexity with more gears per arm
  */
 
 import type { MachineConfig } from "../src/engine";
 
-/** How many motor-angle steps to draw per pass */
-export const steps = 50_000;
+/** Which reference image this session targets */
+export const target = "IMG_3504.webp";
 
-/** Canvas/SVG dimensions in px */
+/** Steps per pass — keep low (5k–10k) during shape iteration */
+export const steps = 5_000;
+
+/** Canvas dimensions */
 export const width = 1200;
 export const height = 1200;
 
 /** Line width */
-export const lineWidth = 0.6;
+export const lineWidth = 0.5;
 
-/** Background color (use "none" for transparent SVG) */
-export const background = "#f0f0ec";
+/** Dark background for the trefoil knot target */
+export const background = "#1c1c1e";
 
-/**
- * Each pass draws the full curve with one color.
- * The real drawing has 3 passes (pink, blue, orange) each rotated ~120°.
- * `phaseOffset` is added to ALL gear phases for that pass.
- */
+/** Single light pass — no color rotation needed for single-pass target */
 export const passes: { color: string; phaseOffset: number }[] = [
-  { color: "#d64078", phaseOffset: 0 },
-  { color: "#3fa8c8", phaseOffset: (2 * Math.PI) / 3 },
-  { color: "#d07030", phaseOffset: (4 * Math.PI) / 3 },
+  { color: "#dde8f0", phaseOffset: 0 },
 ];
 
 /**
- * Machine configuration — tweak these to match the target image.
- *
- * Start simple: one gear per arm, try to get the 3-lobe shape,
- * then add table rotation to fill the lobes with dense lines.
+ * Starting config — simple 1:3 Lissajous to see the 3-fold base shape.
+ * The trefoil knot likely needs 2+ gears per arm for the complex outline.
  */
 export const machine: MachineConfig = {
   driveTeeth: 20,
 
   xArm: {
     gears: [
-      { teeth: 20, crankRadius: 200, phase: 0 },
-      { teeth: 10, crankRadius: 150, phase: 0 },
+      // 60T → speed = 20/60 = 1/3 (slow component)
+      { teeth: 60, crankRadius: 300, phase: 0 },
     ],
   },
 
   yArm: {
     gears: [
-      { teeth: 20, crankRadius: 200, phase: Math.PI / 2 },
-      { teeth: 10, crankRadius: 150, phase: Math.PI / 2 },
+      // 20T → speed = 1 (fast component — 1:3 ratio → 3 lobes)
+      { teeth: 20, crankRadius: 300, phase: Math.PI / 2 },
     ],
   },
 
-  // Step 1: table off to see raw shape
-  tableTeeth: 8000,
+  // Table off to see raw curve shape first
+  tableTeeth: 0,
 
   speed: 0.015,
   lineWidth,
