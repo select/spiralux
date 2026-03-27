@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Nuxt root container must fill viewport for flex layouts */
+#__nuxt { height: 100%; }
+
 /* ===== Theme tokens — mapped to CSS vars set by JS ===== */
 @theme {
   --color-base: rgb(var(--bg-base));
