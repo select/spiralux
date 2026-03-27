@@ -22,5 +22,5 @@
     "import/consistent-type-specifier-style": "warn",
     "import/no-unassigned-import": "off"
   },
-  "ignorePatterns": ["dist/**", "node_modules/**", "*.config.*"]
+  "ignorePatterns": ["dist/**", "node_modules/**", "*.config.*", "scripts/**"]
 }
