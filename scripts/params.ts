@@ -24,14 +24,14 @@
 import type { MachineConfig } from "../src/engine";
 
 /** How many motor-angle steps to draw per pass */
-export const steps = 80_000;
+export const steps = 50_000;
 
 /** Canvas/SVG dimensions in px */
 export const width = 1200;
 export const height = 1200;
 
 /** Line width */
-export const lineWidth = 0.4;
+export const lineWidth = 0.6;
 
 /** Background color (use "none" for transparent SVG) */
 export const background = "#f0f0ec";
@@ -58,19 +58,20 @@ export const machine: MachineConfig = {
 
   xArm: {
     gears: [
-      { teeth: 60, crankRadius: 150, phase: 0 },
+      { teeth: 20, crankRadius: 200, phase: 0 },
+      { teeth: 10, crankRadius: 150, phase: 0 },
     ],
   },
 
   yArm: {
     gears: [
-      { teeth: 60, crankRadius: 150, phase: Math.PI / 2 },
+      { teeth: 20, crankRadius: 200, phase: Math.PI / 2 },
+      { teeth: 10, crankRadius: 150, phase: Math.PI / 2 },
     ],
   },
 
-  // Table rotation — slow rotation fills the lobes.
-  // Try 0 first to see the basic shape, then increase.
-  tableTeeth: 190,
+  // Step 1: table off to see raw shape
+  tableTeeth: 8000,
 
   speed: 0.015,
   lineWidth,
