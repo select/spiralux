@@ -5,7 +5,7 @@
  * render.ts reads it. Nothing is scattered or hardcoded elsewhere.
  */
 
-import type { MachineConfig, EpicyclicConfig } from "../src/engine";
+import type { MachineConfig, EpicyclicConfig } from "../app/utils/engine";
 
 export interface Pass {
   color: string;

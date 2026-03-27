@@ -1,5 +1,5 @@
-node_modules
-dist
-.vite
+node_modules/
+.nuxt/
+.output/
+dist/
 *.local
-output

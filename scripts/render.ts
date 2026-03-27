@@ -12,8 +12,8 @@
 
 import { writeFileSync, mkdirSync, existsSync, readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
-import { penPosition, epicyclicPenPosition } from "../src/engine";
-import type { MachineConfig, EpicyclicConfig } from "../src/engine";
+import { penPosition, epicyclicPenPosition } from "../app/utils/engine";
+import type { MachineConfig, EpicyclicConfig } from "../app/utils/engine";
 import {
   isEpicyclic, getSpeed, getTableTeeth, getDriveTeeth, getLineWidth, tableRotationDeg,
 } from "./experiment";
