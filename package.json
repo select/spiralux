@@ -1,0 +1,26 @@
+{
+  "name": "multi-spiro-graph",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "devDependencies": {
+    "@tailwindcss/vite": "4.2.2",
+    "@vitejs/plugin-vue": "6.0.5",
+    "tailwindcss": "4.2.2",
+    "typescript": "6.0.2",
+    "vite": "8.0.3",
+    "vue-tsc": "3.2.6"
+  },
+  "dependencies": {
+    "vue": "3.5.31"
+  }
+}

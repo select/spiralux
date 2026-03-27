@@ -1,0 +1,63 @@
+@import "tailwindcss";
+
+/* ===== Theme tokens — mapped to CSS vars set by JS ===== */
+@theme {
+  --color-base: rgb(var(--bg-base));
+  --color-surface: rgb(var(--bg-surface));
+  --color-elevated: rgb(var(--bg-elevated));
+  --color-canvas: rgb(var(--bg-canvas));
+  --color-border: rgb(var(--border));
+  --color-border-focus: rgb(var(--border-focus));
+  --color-primary: rgb(var(--text-primary));
+  --color-secondary: rgb(var(--text-secondary));
+  --color-muted: rgb(var(--text-muted));
+  --color-accent: rgb(var(--accent));
+  --color-accent-hover: rgb(var(--accent-hover));
+  --color-accent-glow: rgb(var(--accent-glow));
+  --color-shadow: rgb(var(--shadow-color));
+  --color-glass: rgb(var(--glass-bg));
+
+  --animate-fade-in: fade-in 0.4s ease both;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ===== Range slider thumb — no Tailwind pseudo for this ===== */
+input[type="range"] { -webkit-appearance: none; appearance: none; }
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: rgb(var(--accent));
+  border: 2px solid rgb(var(--bg-surface));
+  cursor: pointer;
+  box-shadow: 0 0 0 0 rgb(var(--accent-glow));
+  transition: box-shadow 0.2s ease, transform 0.15s ease;
+}
+input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+  box-shadow: 0 0 0 6px rgb(var(--accent-glow));
+}
+input[type="range"]:active::-webkit-slider-thumb {
+  transform: scale(1.1);
+  box-shadow: 0 0 0 8px rgb(var(--accent-glow));
+}
+input[type="range"]::-moz-range-thumb {
+  width: 16px; height: 16px; border-radius: 50%;
+  background: rgb(var(--accent));
+  border: 2px solid rgb(var(--bg-surface));
+  cursor: pointer;
+}
+
+/* ===== Color input swatch — no Tailwind pseudo for this ===== */
+input[type="color"] { -webkit-appearance: none; appearance: none; padding: 0; }
+input[type="color"]::-webkit-color-swatch-wrapper { padding: 2px; }
+input[type="color"]::-webkit-color-swatch { border: none; border-radius: 4px; }
+
+/* ===== Scrollbar — no Tailwind pseudo for this ===== */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgb(var(--text-muted) / 0.3); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: rgb(var(--text-muted) / 0.5); }
