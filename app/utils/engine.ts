@@ -118,13 +118,31 @@ export function penPosition(config: MachineConfig, theta: number): { x: number; 
  * This naturally produces spirograph / Fourier epicycle curves.
  * ═══════════════════════════════════════════════════════════════ */
 
+export interface RadiusMod {
+  /**
+   * Slow amplitude modulation applied to this orbit's radius.
+   * Models a connected gear that physically changes the crank-pin
+   * distance over time — the "unbalanced gear that changes size".
+   *
+   *   r(θ) = radius + amplitude × sin(freq × θ + phase)
+   *
+   * Use irrational freq values (√2, √3, √5…) for aperiodic,
+   * pseudo-random-looking variation that never exactly repeats.
+   */
+  amplitude: number;   // ± variation in px
+  freq: number;        // modulation speed (radians⁻¹)
+  phase: number;       // initial phase of the modulation
+}
+
 export interface Orbit {
-  /** Arm length — distance from parent gear's center to this gear's center */
+  /** Arm length — nominal crank-pin distance from gear center */
   radius: number;
   /** Rotation speed multiplier (negative = clockwise) */
   speed: number;
   /** Initial phase offset in radians */
   phase: number;
+  /** Optional slow radius modulation — gear size varies over time */
+  mod?: RadiusMod;
 }
 
 export interface EpicyclicConfig {
@@ -147,12 +165,16 @@ export function epicyclicPenPosition(config: EpicyclicConfig, theta: number): { 
   let x = 0;
   let y = 0;
   for (const orbit of config.orbits) {
+    // Apply optional radius modulation — gear size varies over time
+    const r = orbit.mod
+      ? orbit.radius + orbit.mod.amplitude * Math.sin(orbit.mod.freq * theta + orbit.mod.phase)
+      : orbit.radius;
     const angle = orbit.speed * theta + orbit.phase;
-    x += orbit.radius * Math.cos(angle);
-    y += orbit.radius * Math.sin(angle);
+    x += r * Math.cos(angle);
+    y += r * Math.sin(angle);
   }
 
-  // Paper table rotation (same as linear model)
+  // Paper table rotation
   if (config.tableTeeth > 0) {
     const tableSpeed = config.driveTeeth / config.tableTeeth;
     const tableAngle = -tableSpeed * theta;

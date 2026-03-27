@@ -3,23 +3,13 @@
  *
  * ══════════════════════════════════════════════════════════════
  * CURRENT TARGET: gandy-1.jpg — "10-Lobe Mandala"
- * ENGINE MODE: EPICYCLIC — all orbits rotating (no speed=0)
+ * ENGINE MODE: EPICYCLIC + RADIUS MODULATION
  * ══════════════════════════════════════════════════════════════
  *
- * Machine physics:
- *   - orbit1 (slow gear, R=240, ω=1):  main arm sweeps the ring
- *   - orbit2 (fast gear, R=160, ω=11): connected gear makes radius
- *     oscillate between |240−160|=80 and 240+160=400, 10× per rev
- *   - table rotation: slowly shifts each revolution → spiral mesh fill
- *
- * Table rotation math (50k steps × speed 0.015):
- *   total θ = 750 rad
- *   table rotation = 750 × 20/T rad
- *   One lobe width = 2π/10 = 36°
- *   For table to sweep exactly 1 lobe: T = 750×20/(2π/10) ≈ 23,873
- *   → use T=24000 → 35.8° total rotation → fills one lobe, no smear
- *
- * Exp 39: single pass, see shape first
+ * Exp 42: tighten mod — keep 10-fold structure while adding variation
+ *   orbit2 mod ±45 at √2×0.03 → only ~5 mod cycles over 750 rad
+ *   → lobes vary gently, structure stays clear
+ *   Fewer passes (4) at higher opacity for distinct colors
  */
 
 import type { ExperimentConfig } from "./experiment";
@@ -27,23 +17,40 @@ import type { ExperimentConfig } from "./experiment";
 const config: ExperimentConfig = {
   target: "gandy-1.jpg",
 
-  steps:      50_000,
+  steps:      60_000,
   width:      1200,
   height:     1200,
   lineWidth:  0.4,
-  opacity:    0.6,
+  opacity:    0.4,
   background: "#faf9f6",
 
+  // 4 passes at 90° — strong color contrast, covers all lobe positions
   passes: [
-    { color: "#2196f3", phaseOffset: 0 },
+    { color: "#00bcd4", phaseOffset: 0 },
+    { color: "#7b1fa2", phaseOffset: Math.PI / 2 },
+    { color: "#e91e63", phaseOffset: Math.PI },
+    { color: "#ff9800", phaseOffset: (3 * Math.PI) / 2 },
   ],
 
   epicyclic: {
     orbits: [
-      { radius: 240, speed:  1, phase: 0 },   // slow arm — sweeps ring
-      { radius: 160, speed: 11, phase: 0 },   // fast gear — 10 lobes
+      {
+        radius: 250,
+        speed:  1,
+        phase:  0,
+        // Gentle breathing of the main ring
+        mod: { amplitude: 20, freq: Math.sqrt(3) * 0.02, phase: 0 },
+      },
+      {
+        radius: 160,
+        speed:  11,
+        phase:  0,
+        // Moderate lobe variation — ±45 → lobes vary 115↔205
+        // √2×0.03 ≈ 0.0424 → ~5 cycles over 750 rad total
+        mod: { amplitude: 45, freq: Math.sqrt(2) * 0.03, phase: 0.8 },
+      },
     ],
-    tableTeeth: 24000,   // ≈36° total → fills 1 lobe width
+    tableTeeth: 0,
     driveTeeth: 20,
     speed:      0.015,
     lineWidth:  0.4,
