@@ -12,10 +12,10 @@
 
 import { writeFileSync, mkdirSync, existsSync, readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
-import { penPosition, epicyclicPenPosition } from "../app/utils/engine";
+import { penPosition, epicyclicPenPosition, spiralPenPosition } from "../app/utils/engine";
 import type { MachineConfig, EpicyclicConfig, RadiusMod } from "../app/utils/engine";
 import {
-  isEpicyclic, getSpeed, getTableTeeth, getDriveTeeth, getLineWidth, tableRotationDeg,
+  isEpicyclic, isSpiral, getSpeed, getTableTeeth, getDriveTeeth, getLineWidth, tableRotationDeg,
 } from "./experiment";
 import type { ExperimentConfig } from "./experiment";
 import cfg from "./params";
@@ -25,16 +25,34 @@ mkdirSync(outDir, { recursive: true });
 
 // ── Pen position ────────────────────────────────────────────
 
-function getPenPosition(theta: number, phaseOffset: number): { x: number; y: number } {
+import type { Orbit } from "../app/utils/engine";
+
+function getPenPosition(
+  theta: number,
+  phaseOffset: number,
+  orbitOverride?: Orbit[],
+  tableTeethOverride?: number,
+): { x: number; y: number } {
+  if (isSpiral(cfg)) {
+    // Phase offset shifts the orbit start position, not the spiral winding
+    const sc = phaseOffset === 0 || !cfg.spiral.orbit
+      ? cfg.spiral
+      : { ...cfg.spiral, orbit: { ...cfg.spiral.orbit, phase: cfg.spiral.orbit.phase + phaseOffset } };
+    return spiralPenPosition(sc, theta);
+  }
   if (isEpicyclic(cfg)) {
-    const ec = phaseOffset === 0 ? cfg.epicyclic : applyEpicyclicPhase(cfg.epicyclic, phaseOffset);
+    // Per-pass orbit override: models swapping cone pulley step between passes
+    const baseEc = orbitOverride
+      ? { ...cfg.epicyclic, orbits: orbitOverride, tableTeeth: tableTeethOverride ?? cfg.epicyclic.tableTeeth }
+      : cfg.epicyclic;
+    const ec = phaseOffset === 0 ? baseEc : applyEpicyclicPhase(baseEc, phaseOffset);
     return epicyclicPenPosition(ec, theta);
   }
   if (cfg.machine) {
     const mc = phaseOffset === 0 ? cfg.machine : applyMachinePhase(cfg.machine, phaseOffset);
     return penPosition(mc, theta);
   }
-  throw new Error("No machine or epicyclic config in params.ts");
+  throw new Error("No machine, epicyclic, or spiral config in params.ts");
 }
 
 function applyMachinePhase(m: MachineConfig, off: number): MachineConfig {
@@ -64,11 +82,16 @@ function renderSVG(): string {
     lines.push(`  <rect width="${cfg.width}" height="${cfg.height}" fill="${cfg.background}" />`);
   }
 
-  for (const pass of cfg.passes) {
+  for (let passIdx = 0; passIdx < cfg.passes.length; passIdx++) {
+    const pass = cfg.passes[passIdx]!;
     const pts: string[] = [];
-    let theta = 0;
+    // continuousTheta: each pass continues from where the previous ended.
+    // This models the real machine — the table keeps rotating between colour
+    // changes, so each pass lands at a different canvas angle.
+    const thetaBase = cfg.continuousTheta ? passIdx * cfg.steps * speed : 0;
+    let theta = thetaBase;
     for (let i = 0; i <= cfg.steps; i++) {
-      const p = getPenPosition(theta, pass.phaseOffset);
+      const p = getPenPosition(theta, pass.phaseOffset, pass.orbits, pass.tableTeeth);
       const x = (cx + p.x).toFixed(2);
       const y = (cy + p.y).toFixed(2);
       pts.push(i === 0 ? `M${x},${y}` : `L${x},${y}`);
@@ -101,6 +124,12 @@ function nextExperimentId(): number {
 }
 
 function fmtConfigForCsv(): { xGears: string; yGears: string } {
+  if (cfg.spiral) {
+    const desc = `g=${cfg.spiral.growth} + ` + cfg.spiral.wobbles
+      .map(w => `A${w.amplitude}/f${w.freq}/φ${w.phase.toFixed(2)}`)
+      .join(" + ");
+    return { xGears: `spiral: ${desc}`, yGears: "—" };
+  }
   if (cfg.epicyclic) {
     const desc = cfg.epicyclic.orbits
       .map(o => `ω${o.speed}/R${o.radius}/φ${o.phase.toFixed(2)}`)
@@ -129,7 +158,7 @@ function logExperiment(id: number, svgFile: string, pngFile: string, notes: stri
 
   const colors = cfg.passes.map(p => p.color).join(";");
   const { xGears, yGears } = fmtConfigForCsv();
-  const mode = isEpicyclic(cfg) ? "epicyclic" : "linear";
+  const mode = isSpiral(cfg) ? "spiral" : isEpicyclic(cfg) ? "epicyclic" : "linear";
 
   const row = [
     id,
@@ -214,12 +243,22 @@ console.log(`${bold(cyan(`Experiment #${expId}`))}  ${dim(new Date().toLocaleTim
 if (notes) console.log(`${yellow("📝")} ${yellow(notes)}`);
 console.log(divider);
 
-const modeLabel = isEpicyclic(cfg) ? `${a.magenta}EPICYCLIC${a.reset}` : "LINEAR";
+const modeLabel = isSpiral(cfg) ? `${a.magenta}SPIRAL${a.reset}` : isEpicyclic(cfg) ? `${a.magenta}EPICYCLIC${a.reset}` : "LINEAR";
 console.log(`  ${dim("mode")}    ${bold(modeLabel)}    ${dim("canvas")} ${cfg.width}×${cfg.height}`);
 console.log(`  ${dim("steps")}   ${bold(fmtSteps(cfg.steps))}    ${dim("table")}  ${getTableTeeth(cfg) ? `${getTableTeeth(cfg)}T → ${tableRotationDeg(cfg)}` : blue("off")}`);
 console.log(`  ${dim("passes")}  ${bold(String(cfg.passes.length))} ${cfg.passes.map(p => `${a.bold}\x1b[38;5;${colorToAnsi(p.color)}m●${a.reset}`).join(" ")}    ${dim("opacity")} ${cfg.opacity}    ${dim("lw")} ${cfg.lineWidth}`);
 
-if (isEpicyclic(cfg)) {
+if (isSpiral(cfg)) {
+  console.log(`  ${dim("growth")}  ${cfg.spiral.growth}px/rad`);
+  if (cfg.spiral.orbit) {
+    const o = cfg.spiral.orbit;
+    console.log(`  ${dim("orbit")}   R=${o.radius} ω=${o.speed} φ=${o.phase.toFixed(2)}`);
+  }
+  for (let i = 0; i < cfg.spiral.wobbles.length; i++) {
+    const w = cfg.spiral.wobbles[i]!;
+    console.log(`  ${dim(`wobble${i + 1}`)}  A=${w.amplitude} f=${w.freq} φ=${w.phase.toFixed(2)}`);
+  }
+} else if (isEpicyclic(cfg)) {
   for (let i = 0; i < cfg.epicyclic.orbits.length; i++) {
     const o = cfg.epicyclic.orbits[i]!;
     const dir = o.speed < 0 ? "↻" : "↺";

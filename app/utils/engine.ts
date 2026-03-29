@@ -189,6 +189,98 @@ export function epicyclicPenPosition(config: EpicyclicConfig, theta: number): { 
   return { x, y };
 }
 
+/* ═══════════════════════════════════════════════════════════════
+ * SPIRAL ENGINE — Archimedean spiral + sinusoidal wobbles
+ *
+ * The pen traces an outward spiral whose radius grows linearly
+ * with θ, plus any number of sinusoidal wobbles layered on top.
+ *
+ *   r(θ) = growth × θ  +  Σ wobble_i.amplitude × sin(wobble_i.freq × θ + wobble_i.phase)
+ *   x = r(θ) × cos(θ)
+ *   y = r(θ) × sin(θ)
+ *
+ * This naturally produces organic, wobbly spiral patterns.
+ * ═══════════════════════════════════════════════════════════════ */
+
+export interface Wobble {
+  /** Amplitude of sinusoidal radius modulation (px) */
+  amplitude: number;
+  /** Frequency — wobble lobes per radian of spiral rotation */
+  freq: number;
+  /** Phase offset in radians */
+  phase: number;
+}
+
+export interface SpiralOrbit {
+  /** Distance of the spiral center from the canvas center (px) */
+  radius: number;
+  /** How fast the spiral center orbits (rotations per radian of θ) */
+  speed: number;
+  /** Phase offset for the orbit */
+  phase: number;
+  /** Offset the orbit center from the canvas center (px) */
+  cx?: number;
+  cy?: number;
+}
+
+export interface SpiralConfig {
+  /** Base loop radius — the pen traces circles of this size (px) */
+  baseRadius: number;
+  /** Radial growth per radian of LOCAL spin — spiral opens outward over time */
+  growth: number;
+  /** Sinusoidal wobbles layered on the base spiral radius */
+  wobbles: Wobble[];
+  /** The spiral center orbits the canvas center at this radius/speed */
+  orbit?: SpiralOrbit;
+  /**
+   * How fast the pen spins around the spiral center.
+   * This is independent of the orbit speed — high spinSpeed with low
+   * orbit.speed means many tight loops around a slowly moving center.
+   * Default: 1
+   */
+  spinSpeed?: number;
+  /** Radians of motor rotation per animation step */
+  speed: number;
+  /** Stroke line width in px */
+  lineWidth: number;
+}
+
+/**
+ * Compute pen position for spiral config at motor angle θ.
+ *
+ * The pen spins locally at spinSpeed × θ, spiraling outward from
+ * its center. When orbit is set, that center itself orbits the
+ * canvas center at a (typically much slower) orbit.speed.
+ *
+ *   localAngle = spinSpeed × θ
+ *   r(localAngle) = growth × localAngle + Σ wobbles
+ *   pen = orbitCenter + (r × cos(localAngle), r × sin(localAngle))
+ */
+export function spiralPenPosition(config: SpiralConfig, theta: number): { x: number; y: number } {
+  const spin = config.spinSpeed ?? 1;
+  const localAngle = spin * theta;
+
+  // Local spiral radius: base loop size + slow outward growth
+  let r = config.baseRadius + config.growth * localAngle;
+  for (const w of config.wobbles) {
+    r += w.amplitude * Math.sin(w.freq * localAngle + w.phase);
+  }
+
+  // Pen position relative to spiral center
+  const lx = r * Math.cos(localAngle);
+  const ly = r * Math.sin(localAngle);
+
+  // Spiral center orbit (slow)
+  if (config.orbit) {
+    const oa = config.orbit.speed * theta + config.orbit.phase;
+    const cx = (config.orbit.cx ?? 0) + config.orbit.radius * Math.cos(oa);
+    const cy = (config.orbit.cy ?? 0) + config.orbit.radius * Math.sin(oa);
+    return { x: cx + lx, y: cy + ly };
+  }
+
+  return { x: lx, y: ly };
+}
+
 /* ---- Defaults ---- */
 
 export function defaultGear(teeth = 60, crankRadius = 80, phase = 0): Gear {

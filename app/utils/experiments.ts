@@ -5,9 +5,12 @@
 export interface Experiment {
   id: number;
   timestamp: string;
+  target: string;
+  mode: string;
   steps: number;
   passes: number;
   colors: string[];
+  opacity: number;
   driveTeeth: number;
   xArmGears: string;
   yArmGears: string;
@@ -20,7 +23,6 @@ export interface Experiment {
   notes: string;
   svgFile: string;
   pngFile: string;
-  target: string;
 }
 
 export function parseCSVLine(line: string): string[] {
@@ -57,9 +59,12 @@ export function mapRow(r: Record<string, string>): Experiment {
   return {
     id: parseInt(r.id!),
     timestamp: r.timestamp!,
+    target: r.target ?? "IMG_6777.jpeg",
+    mode: r.mode ?? "linear",
     steps: parseInt(r.steps!),
     passes: parseInt(r.passes!),
     colors: (r.colors ?? "#333").split(";"),
+    opacity: parseFloat(r.opacity ?? "0.5"),
     driveTeeth: parseInt(r.drive_teeth!),
     xArmGears: r.x_arm_gears ?? "",
     yArmGears: r.y_arm_gears ?? "",
@@ -72,6 +77,5 @@ export function mapRow(r: Record<string, string>): Experiment {
     notes: r.notes ?? "",
     svgFile: r.svg_file ?? "",
     pngFile: r.png_file ?? "",
-    target: r.target ?? "IMG_6777.jpeg",
   };
 }

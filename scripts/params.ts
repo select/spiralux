@@ -2,14 +2,16 @@
  * params.ts — THE file to edit between experiments.
  *
  * ══════════════════════════════════════════════════════════════
- * CURRENT TARGET: gandy-1.jpg — "10-Lobe Mandala"
- * ENGINE MODE: EPICYCLIC + RADIUS MODULATION
+ * TECHNIQUE: Single lobe — back to spiral engine from #67
+ *            but more lobe-shaped (bulge in middle, taper at ends)
  * ══════════════════════════════════════════════════════════════
  *
- * Exp 42: tighten mod — keep 10-fold structure while adding variation
- *   orbit2 mod ±45 at √2×0.03 → only ~5 mod cycles over 750 rad
- *   → lobes vary gently, structure stays clear
- *   Fewer passes (4) at higher opacity for distinct colors
+ * Based on #67 which the user liked. Changes:
+ * - Bigger breathing wobble so the coil swells in the middle
+ *   and tapers at both ends → petal silhouette
+ * - Orbit starts pointing upward (phase=-π/2) so the lobe
+ *   extends radially from center toward the top
+ * - Slightly more steps for denser fill
  */
 
 import type { ExperimentConfig } from "./experiment";
@@ -17,44 +19,30 @@ import type { ExperimentConfig } from "./experiment";
 const config: ExperimentConfig = {
   target: "gandy-1.jpg",
 
-  steps:      60_000,
+  steps:      20_000,
   width:      1200,
   height:     1200,
   lineWidth:  0.4,
-  opacity:    0.4,
+  opacity:    0.6,
   background: "#faf9f6",
+  continuousTheta: false,
 
-  // 4 passes at 90° — strong color contrast, covers all lobe positions
-  passes: [
-    { color: "#00bcd4", phaseOffset: 0 },
-    { color: "#7b1fa2", phaseOffset: Math.PI / 2 },
-    { color: "#e91e63", phaseOffset: Math.PI },
-    { color: "#ff9800", phaseOffset: (3 * Math.PI) / 2 },
-  ],
-
-  epicyclic: {
-    orbits: [
-      {
-        radius: 250,
-        speed:  1,
-        phase:  0,
-        // Gentle breathing of the main ring
-        mod: { amplitude: 20, freq: Math.sqrt(3) * 0.02, phase: 0 },
-      },
-      {
-        radius: 160,
-        speed:  11,
-        phase:  0,
-        // Moderate lobe variation — ±45 → lobes vary 115↔205
-        // √2×0.03 ≈ 0.0424 → ~5 cycles over 750 rad total
-        mod: { amplitude: 45, freq: Math.sqrt(2) * 0.03, phase: 0.8 },
-      },
+  spiral: {
+    baseRadius: 8,
+    growth:     0.04,
+    spinSpeed:  4,
+    wobbles: [
+      { amplitude: 30, freq: 0.004, phase: -Math.PI / 2 },
+      { amplitude: 4,  freq: 0.03,  phase: 0 },
     ],
-    tableTeeth: 0,
-    driveTeeth: 20,
-    speed:      0.015,
-    lineWidth:  0.4,
+    orbit: { radius: 200, speed: 0.008, phase: -Math.PI / 2, cx: 0, cy: 0 },
+    speed: 0.02,
+    lineWidth: 0.4,
   },
+
+  passes: [
+    { color: "#1565c0", phaseOffset: 0 },
+  ],
 };
 
 export default config;
