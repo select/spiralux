@@ -76,3 +76,5 @@ id,timestamp,target,mode,steps,passes,colors,opacity,drive_teeth,x_arm_gears,y_a
 75,2026-03-29T20:29:06.623Z,IMG_3504.webp,spiral,30000,1,#dde8f0,0.7,20,spiral: g=0 + ,—,0,0.02,0.25,1200,1200,#1c1c1e,"trefoil lobe: much fatter 15→220→15, spinSpeed 2 for fewer loops",exp-0075.svg,exp-0075.png
 76,2026-03-29T20:33:25.323Z,IMG_3504.webp,spiral,30000,1,#dde8f0,0.7,20,spiral: g=0 + ,—,0,0.02,0.25,1200,1200,#1c1c1e,"trefoil lobe: slower orbit 0.004, orbit radius envelope 200→350→200 pushes fat part outward",exp-0076.svg,exp-0076.png
 77,2026-03-29T20:35:17.159Z,IMG_3504.webp,spiral,30000,1,#dde8f0,0.7,20,spiral: g=0 + ,—,0,0.02,0.25,1200,1200,#1c1c1e,"trefoil lobe: orbit 0.003, cx=-100 recenter, radius 150→350→150",exp-0077.svg,exp-0077.png
+78,2026-03-29T20:39:23.231Z,IMG_3504.webp,spiral,30000,1,#dde8f0,0.7,20,spiral: g=0 + ,—,0,0.02,0.25,1200,1200,#1c1c1e,"trefoil lobe: orbit radius 40→380→40 (start/end near center), size 3→220→3",exp-0078.svg,exp-0078.png
+79,2026-03-29T20:41:03.550Z,IMG_3504.webp,spiral,30000,1,#dde8f0,0.7,20,spiral: g=0 + ,—,0,0.02,0.25,1200,1200,#1c1c1e,trefoil lobe: cx=0 cy=30 recenter,exp-0079.svg,exp-0079.png
