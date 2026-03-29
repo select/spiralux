@@ -257,6 +257,34 @@ export interface SpiralConfig {
    * Default: 1
    */
   spinSpeed?: number;
+  /**
+   * Elongation factor — stretches spiral loops into ellipses along
+   * the radial direction (away from canvas center).
+   * 1 = perfect circles, 2 = ellipses twice as tall as wide, etc.
+   * Can also be an envelope for varying elongation along the path.
+   * Default: 1
+   */
+  elongation?: number | SizeKeyframe[];
+  /**
+   * Outward bias (0–1) — deforms each loop into an egg/teardrop shape.
+   * The side pointing away from canvas center becomes fatter,
+   * the inward side becomes thinner. Always oriented radially.
+   * 0 = perfect circle/ellipse, 0.5 = noticeable egg, 1 = extreme.
+   * Default: 0
+   */
+  outwardBias?: number;
+  /**
+   * Number of lobes/peaks per loop — modulates local radius with
+   * a cosine harmonic: r *= (1 + lobeDepth * cos(lobes * localAngle)).
+   * Creates rose/epitrochoid-like shapes instead of simple circles.
+   * Default: 0 (no lobes, perfect circle/ellipse)
+   */
+  lobes?: number;
+  /**
+   * Depth of lobe modulation (0–1). 0 = no effect, 1 = full depth.
+   * Default: 0.3
+   */
+  lobeDepth?: number;
   /** Radians of motor rotation per animation step */
   speed: number;
   /** Stroke line width in px */
@@ -316,7 +344,7 @@ export function spiralPenPosition(config: SpiralConfig, theta: number): { x: num
   const lx = r * Math.cos(localAngle);
   const ly = r * Math.sin(localAngle);
 
-  // Spiral center orbit (slow)
+  // Pen position: elliptical loops aligned to orbit radial direction
   if (config.orbit) {
     // Orbit radius can vary along the path via radiusEnvelope
     let orbitR = config.orbit.radius;
@@ -325,8 +353,43 @@ export function spiralPenPosition(config: SpiralConfig, theta: number): { x: num
       orbitR = interpolateEnvelope(config.orbit.radiusEnvelope, t);
     }
     const oa = config.orbit.speed * theta + config.orbit.phase;
-    const cx = (config.orbit.cx ?? 0) + orbitR * Math.cos(oa);
-    const cy = (config.orbit.cy ?? 0) + orbitR * Math.sin(oa);
+
+    // Compute elongation factor
+    let elong = 1;
+    if (config.elongation != null) {
+      if (typeof config.elongation === "number") {
+        elong = config.elongation;
+      } else if (config.elongation.length >= 2 && config.duration) {
+        const t = Math.min(theta / config.duration, 1);
+        elong = interpolateEnvelope(config.elongation, t);
+      }
+    }
+
+    // Outward bias — egg/teardrop shape per loop
+    const bias = config.outwardBias ?? 0;
+    if (bias > 0) {
+      r *= (1 + bias * Math.cos(localAngle - oa));
+    }
+
+    // Lobe modulation — rose/epitrochoid shape per loop
+    const lobes = config.lobes ?? 0;
+    const lobeDepth = config.lobeDepth ?? 0.3;
+    if (lobes > 0) {
+      r *= (1 + lobeDepth * Math.cos(lobes * localAngle));
+    }
+
+    // Local spiral in orbit-aligned frame: radial (outward) × tangential
+    const radialComp = r * elong * Math.cos(localAngle);   // stretched outward
+    const tangentComp = r * Math.sin(localAngle);           // normal tangential
+
+    // Rotate from orbit-aligned frame to canvas frame
+    const cosOa = Math.cos(oa);
+    const sinOa = Math.sin(oa);
+    const lx = radialComp * cosOa - tangentComp * sinOa;
+    const ly = radialComp * sinOa + tangentComp * cosOa;
+
+    const cx = (config.orbit.cx ?? 0) + orbitR * cosOa;
+    const cy = (config.orbit.cy ?? 0) + orbitR * sinOa;
     return { x: cx + lx, y: cy + ly };
   }
 
