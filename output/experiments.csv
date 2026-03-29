@@ -70,3 +70,9 @@ id,timestamp,target,mode,steps,passes,colors,opacity,drive_teeth,x_arm_gears,y_a
 69,2026-03-29T20:02:35.570Z,gandy-1.jpg,epicyclic,40000,1,#1a1a2e,0.6,20,epicyclic: ω1/R250/φ0.00 → ω11/R180/φ0.00,—,50000,0.015,0.3,1200,1200,#faf9f6,,exp-0069.svg,exp-0069.png
 70,2026-03-29T20:07:20.227Z,gandy-1.jpg,spiral,20000,1,#1565c0,0.6,20,spiral: g=0.04 + A35/f0.008/φ-1.57 + A5/f0.05/φ0.00,—,0,0.02,0.4,1200,1200,#faf9f6,,exp-0070.svg,exp-0070.png
 71,2026-03-29T20:08:54.402Z,gandy-1.jpg,spiral,20000,1,#1565c0,0.6,20,spiral: g=0.04 + A30/f0.004/φ-1.57 + A4/f0.03/φ0.00,—,0,0.02,0.4,1200,1200,#faf9f6,,exp-0071.svg,exp-0071.png
+72,2026-03-29T20:14:37.730Z,IMG_3504.webp,spiral,30000,1,#dde8f0,0.7,20,spiral: g=0.002 + A50/f0.00065/φ0.00 + A3/f0.008/φ0.00,—,0,0.02,0.25,1200,1200,#1c1c1e,,exp-0072.svg,exp-0072.png
+73,2026-03-29T20:23:05.001Z,IMG_3504.webp,spiral,30000,1,#dde8f0,0.7,20,spiral: g=0.002 + A50/f0.000654/φ0.00,—,0,0.02,0.25,1200,1200,#1c1c1e,trefoil lobe: removed 2nd wobble for smoother swell,exp-0073.svg,exp-0073.png
+74,2026-03-29T20:27:03.229Z,IMG_3504.webp,spiral,30000,1,#dde8f0,0.7,20,spiral: g=0 + ,—,0,0.02,0.25,1200,1200,#1c1c1e,"trefoil lobe: smooth envelope 8→90→8, cosine interp",exp-0074.svg,exp-0074.png
+75,2026-03-29T20:29:06.623Z,IMG_3504.webp,spiral,30000,1,#dde8f0,0.7,20,spiral: g=0 + ,—,0,0.02,0.25,1200,1200,#1c1c1e,"trefoil lobe: much fatter 15→220→15, spinSpeed 2 for fewer loops",exp-0075.svg,exp-0075.png
+76,2026-03-29T20:33:25.323Z,IMG_3504.webp,spiral,30000,1,#dde8f0,0.7,20,spiral: g=0 + ,—,0,0.02,0.25,1200,1200,#1c1c1e,"trefoil lobe: slower orbit 0.004, orbit radius envelope 200→350→200 pushes fat part outward",exp-0076.svg,exp-0076.png
+77,2026-03-29T20:35:17.159Z,IMG_3504.webp,spiral,30000,1,#dde8f0,0.7,20,spiral: g=0 + ,—,0,0.02,0.25,1200,1200,#1c1c1e,"trefoil lobe: orbit 0.003, cx=-100 recenter, radius 150→350→150",exp-0077.svg,exp-0077.png

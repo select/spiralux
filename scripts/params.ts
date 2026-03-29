@@ -2,46 +2,61 @@
  * params.ts — THE file to edit between experiments.
  *
  * ══════════════════════════════════════════════════════════════
- * TECHNIQUE: Single lobe — back to spiral engine from #67
- *            but more lobe-shaped (bulge in middle, taper at ends)
+ * TECHNIQUE: Single trefoil lobe — smooth envelope interpolation
  * ══════════════════════════════════════════════════════════════
  *
- * Based on #67 which the user liked. Changes:
- * - Bigger breathing wobble so the coil swells in the middle
- *   and tapers at both ends → petal silhouette
- * - Orbit starts pointing upward (phase=-π/2) so the lobe
- *   extends radially from center toward the top
- * - Slightly more steps for denser fill
+ * Uses the new size envelope for perfectly smooth thin→fat→thin
+ * transitions instead of sinusoidal wobbles for shaping.
+ *
+ * Envelope: 8px → 90px → 8px (cosine-interpolated)
+ * orbit: R=250, covers ~240° of arc
+ * spinSpeed: 8 for dense mesh fill
+ * duration: 600 (= 30000 steps × 0.02 speed)
  */
 
 import type { ExperimentConfig } from "./experiment";
 
 const config: ExperimentConfig = {
-  target: "gandy-1.jpg",
+  target: "IMG_3504.webp",
 
-  steps:      20_000,
+  steps:      30_000,
   width:      1200,
   height:     1200,
-  lineWidth:  0.4,
-  opacity:    0.6,
-  background: "#faf9f6",
+  lineWidth:  0.25,
+  opacity:    0.7,
+  background: "#1c1c1e",
   continuousTheta: false,
 
   spiral: {
     baseRadius: 8,
-    growth:     0.04,
-    spinSpeed:  4,
-    wobbles: [
-      { amplitude: 30, freq: 0.004, phase: -Math.PI / 2 },
-      { amplitude: 4,  freq: 0.03,  phase: 0 },
+    growth:     0,
+    spinSpeed:  2,
+    wobbles: [],
+    envelope: [
+      { t: 0,    radius: 15  },
+      { t: 0.15, radius: 100 },
+      { t: 0.5,  radius: 220 },
+      { t: 0.85, radius: 100 },
+      { t: 1,    radius: 15  },
     ],
-    orbit: { radius: 200, speed: 0.008, phase: -Math.PI / 2, cx: 0, cy: 0 },
+    duration: 600,   // 30000 × 0.02
+    orbit: {
+      radius: 200,
+      speed: 0.003,
+      phase: -Math.PI / 2,
+      cx: -100, cy: 0,
+      radiusEnvelope: [
+        { t: 0,    radius: 150 },
+        { t: 0.5,  radius: 350 },
+        { t: 1,    radius: 150 },
+      ],
+    },
     speed: 0.02,
-    lineWidth: 0.4,
+    lineWidth: 0.25,
   },
 
   passes: [
-    { color: "#1565c0", phaseOffset: 0 },
+    { color: "#dde8f0", phaseOffset: 0 },
   ],
 };
 

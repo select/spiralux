@@ -221,15 +221,33 @@ export interface SpiralOrbit {
   /** Offset the orbit center from the canvas center (px) */
   cx?: number;
   cy?: number;
+  /** Smooth orbit radius envelope — shifts the center in/out along the path */
+  radiusEnvelope?: SizeKeyframe[];
+}
+
+export interface SizeKeyframe {
+  /** Position along the path (0 = start, 1 = end) */
+  t: number;
+  /** Loop radius at this point (px) */
+  radius: number;
 }
 
 export interface SpiralConfig {
-  /** Base loop radius — the pen traces circles of this size (px) */
+  /** Base loop radius — used when no envelope is set (px) */
   baseRadius: number;
   /** Radial growth per radian of LOCAL spin — spiral opens outward over time */
   growth: number;
-  /** Sinusoidal wobbles layered on the base spiral radius */
+  /** Sinusoidal wobbles layered on top of the interpolated radius */
   wobbles: Wobble[];
+  /**
+   * Smooth size envelope — keyframes interpolated with cosine easing.
+   * t is 0–1 fraction of the path. Overrides baseRadius + growth when set.
+   * Example: [{t:0, radius:10}, {t:0.5, radius:80}, {t:1, radius:10}]
+   * Requires `duration` to compute the progress fraction.
+   */
+  envelope?: SizeKeyframe[];
+  /** Total motor θ for this pass — needed for envelope interpolation */
+  duration?: number;
   /** The spiral center orbits the canvas center at this radius/speed */
   orbit?: SpiralOrbit;
   /**
@@ -256,12 +274,40 @@ export interface SpiralConfig {
  *   r(localAngle) = growth × localAngle + Σ wobbles
  *   pen = orbitCenter + (r × cos(localAngle), r × sin(localAngle))
  */
+/**
+ * Cosine-interpolate between envelope keyframes for silky-smooth transitions.
+ */
+function interpolateEnvelope(envelope: SizeKeyframe[], t: number): number {
+  if (envelope.length === 0) return 0;
+  if (t <= envelope[0]!.t) return envelope[0]!.radius;
+  if (t >= envelope[envelope.length - 1]!.t) return envelope[envelope.length - 1]!.radius;
+  for (let i = 0; i < envelope.length - 1; i++) {
+    const a = envelope[i]!;
+    const b = envelope[i + 1]!;
+    if (t >= a.t && t <= b.t) {
+      const frac = (t - a.t) / (b.t - a.t);
+      // Cosine interpolation — smooth ease in/out
+      const mu = (1 - Math.cos(frac * Math.PI)) / 2;
+      return a.radius + mu * (b.radius - a.radius);
+    }
+  }
+  return envelope[envelope.length - 1]!.radius;
+}
+
 export function spiralPenPosition(config: SpiralConfig, theta: number): { x: number; y: number } {
   const spin = config.spinSpeed ?? 1;
   const localAngle = spin * theta;
 
-  // Local spiral radius: base loop size + slow outward growth
-  let r = config.baseRadius + config.growth * localAngle;
+  // Radius: envelope (smooth keyframes) or baseRadius + growth
+  let r: number;
+  if (config.envelope && config.envelope.length >= 2 && config.duration) {
+    const t = Math.min(theta / config.duration, 1);
+    r = interpolateEnvelope(config.envelope, t);
+  } else {
+    r = config.baseRadius + config.growth * localAngle;
+  }
+
+  // Add wobbles on top
   for (const w of config.wobbles) {
     r += w.amplitude * Math.sin(w.freq * localAngle + w.phase);
   }
@@ -272,9 +318,15 @@ export function spiralPenPosition(config: SpiralConfig, theta: number): { x: num
 
   // Spiral center orbit (slow)
   if (config.orbit) {
+    // Orbit radius can vary along the path via radiusEnvelope
+    let orbitR = config.orbit.radius;
+    if (config.orbit.radiusEnvelope && config.orbit.radiusEnvelope.length >= 2 && config.duration) {
+      const t = Math.min(theta / config.duration, 1);
+      orbitR = interpolateEnvelope(config.orbit.radiusEnvelope, t);
+    }
     const oa = config.orbit.speed * theta + config.orbit.phase;
-    const cx = (config.orbit.cx ?? 0) + config.orbit.radius * Math.cos(oa);
-    const cy = (config.orbit.cy ?? 0) + config.orbit.radius * Math.sin(oa);
+    const cx = (config.orbit.cx ?? 0) + orbitR * Math.cos(oa);
+    const cy = (config.orbit.cy ?? 0) + orbitR * Math.sin(oa);
     return { x: cx + lx, y: cy + ly };
   }
 
