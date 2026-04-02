@@ -34,13 +34,62 @@ const {
   duplicatePath,
   setPathColor,
   toolbarDock,
+  renamePath,
+  togglePathVisible,
+  movePathOrder,
   showSpines,
   spiralBlendMode,
   BLEND_MODES,
+  downloadProject,
+  uploadProject,
+  downloadSVG,
 } = useBezierStore();
 
 const selCount = computed(() => selectedIds.size);
 const isVertical = computed(() => toolbarDock.value === "left" || toolbarDock.value === "right");
+
+// Inline rename
+const editingIdx = ref<number | null>(null);
+const editName = ref("");
+function startRename(i: number) {
+  editingIdx.value = i;
+  editName.value = paths[i]?.name ?? "";
+  nextTick(() => {
+    const el = document.querySelector(".rename-input") as HTMLInputElement;
+    el?.focus();
+    el?.select();
+  });
+}
+function commitRename() {
+  if (editingIdx.value !== null && editName.value.trim()) {
+    renamePath(editingIdx.value, editName.value.trim());
+  }
+  editingIdx.value = null;
+}
+
+// Drag reorder
+const dragIdx = ref<number | null>(null);
+const dropIdx = ref<number | null>(null);
+function onDragStart(i: number, e: DragEvent) {
+  dragIdx.value = i;
+  e.dataTransfer!.effectAllowed = "move";
+  e.dataTransfer!.setData("text/plain", String(i));
+}
+function onDragOver(i: number, e: DragEvent) {
+  e.preventDefault();
+  dropIdx.value = i;
+}
+function onDrop(i: number) {
+  if (dragIdx.value !== null && dragIdx.value !== i) {
+    movePathOrder(dragIdx.value, i);
+  }
+  dragIdx.value = null;
+  dropIdx.value = null;
+}
+function onDragEnd() {
+  dragIdx.value = null;
+  dropIdx.value = null;
+}
 </script>
 
 <template>
@@ -50,20 +99,49 @@ const isVertical = computed(() => toolbarDock.value === "left" || toolbarDock.va
     <div class="toolbar-row gap-1">
       <span class="toolbar-label">Lines</span>
 
-      <button
+      <div
         v-for="(p, i) in paths"
         :key="p.id"
-        class="path-tab"
-        :class="{ 'path-tab-active': i === activePathIndex }"
+        class="path-tab group"
+        :class="[
+          i === activePathIndex ? 'path-tab-active' : '',
+          !p.visible ? 'opacity-40' : '',
+          dropIdx === i && dragIdx !== i ? 'ring-1 ring-primary' : '',
+        ]"
+        draggable="true"
         @click="setActivePath(i)"
+        @dblclick.stop="startRename(i)"
+        @dragstart="onDragStart(i, $event)"
+        @dragover="onDragOver(i, $event)"
+        @drop="onDrop(i)"
+        @dragend="onDragEnd"
       >
         <span
           class="inline-block w-2.5 h-2.5 rounded-full shrink-0 border border-black/20"
           :style="{ background: p.color }"
         />
-        <span class="text-[11px] font-medium truncate max-w-20">{{ p.name }}</span>
+        <template v-if="editingIdx === i">
+          <input
+            class="rename-input w-16 h-4 text-[11px] bg-elevated border border-primary/60 rounded px-1 text-primary"
+            v-model="editName"
+            @keydown.enter="commitRename"
+            @keydown.escape="editingIdx = null"
+            @blur="commitRename"
+            @click.stop
+          />
+        </template>
+        <template v-else>
+          <span class="text-[11px] font-medium truncate max-w-20">{{ p.name }}</span>
+        </template>
         <span class="text-[9px] text-muted tabular-nums">{{ p.nodes.length }}</span>
-      </button>
+        <button
+          class="opacity-0 group-hover:opacity-100 transition-opacity ml-0.5 p-0"
+          :data-tip="p.visible ? 'Hide' : 'Show'"
+          @click.stop="togglePathVisible(i)"
+        >
+          <i :class="p.visible ? 'i-mdi-eye' : 'i-mdi-eye-off'" class="text-sm" />
+        </button>
+      </div>
 
       <div class="divider" />
 
@@ -149,6 +227,18 @@ const isVertical = computed(() => toolbarDock.value === "left" || toolbarDock.va
       >
         <option v-for="m in BLEND_MODES" :key="m" :value="m">{{ m }}</option>
       </select>
+
+      <div class="divider" />
+
+      <button class="tb" data-tip="Save project" @click="downloadProject">
+        <i class="i-mdi-content-save text-lg" />
+      </button>
+      <button class="tb" data-tip="Load project" @click="uploadProject">
+        <i class="i-mdi-folder-open text-lg" />
+      </button>
+      <button class="tb" data-tip="Export SVG" @click="downloadSVG">
+        <i class="i-mdi-file-export-outline text-lg" />
+      </button>
 
       <span class="text-[10px] text-muted tabular-nums">
         {{ activePath?.nodes.length ?? 0 }} nodes

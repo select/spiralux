@@ -5,7 +5,7 @@
 import { reactive, ref, computed } from "vue";
 import { useStorage } from "@vueuse/core";
 import type { BezierSpiralConfig, PropCurve, PropNode } from "~/utils/spiral";
-import { defaultBezierSpiralConfig, propUid, bumpPropId } from "~/utils/spiral";
+import { defaultBezierSpiralConfig, propUid, bumpPropId, sampleBezierPath, generateSpiralPoints } from "~/utils/spiral";
 
 // ── Data model ───────────────────────────────────────────────────────────────
 
@@ -30,6 +30,7 @@ export interface BezierPath {
   nodes: BezierNode[];
   closed: boolean;
   color: string;
+  visible: boolean;
   spiral: BezierSpiralConfig;
 }
 
@@ -76,6 +77,7 @@ function createPath(name?: string, color?: string): BezierPath {
     nodes: [],
     closed: false,
     color: color ?? PATH_COLORS[paths.length % PATH_COLORS.length]!,
+    visible: true,
     spiral: defaultBezierSpiralConfig(),
   });
 }
@@ -148,6 +150,7 @@ function duplicatePath(index: number) {
     p.nodes.push(cloneNode(n));
   }
   p.closed = src.closed;
+  p.visible = src.visible;
   // Deep-copy spiral config
   p.spiral.enabled = src.spiral.enabled;
   for (const key of ["radius", "elliptic", "orientation", "frequency", "speed"] as const) {
@@ -169,6 +172,27 @@ function renamePath(index: number, name: string) {
 function setPathColor(index: number, color: string) {
   const p = paths[index];
   if (p) p.color = color;
+}
+
+function togglePathVisible(index: number) {
+  const p = paths[index];
+  if (p) p.visible = !p.visible;
+}
+
+function movePathOrder(fromIndex: number, toIndex: number) {
+  if (fromIndex === toIndex) return;
+  if (fromIndex < 0 || fromIndex >= paths.length) return;
+  if (toIndex < 0 || toIndex >= paths.length) return;
+  const [moved] = paths.splice(fromIndex, 1);
+  paths.splice(toIndex, 0, moved!);
+  // Update active path index to follow the active path
+  if (activePathIndex.value === fromIndex) {
+    activePathIndex.value = toIndex;
+  } else if (fromIndex < activePathIndex.value && toIndex >= activePathIndex.value) {
+    activePathIndex.value--;
+  } else if (fromIndex > activePathIndex.value && toIndex <= activePathIndex.value) {
+    activePathIndex.value++;
+  }
 }
 
 // ── Undo / Redo ──────────────────────────────────────────────────────────────
@@ -200,6 +224,7 @@ interface PathSnapshot {
   nodes: { id: string; x: number; y: number; handleIn: Vec2; handleOut: Vec2 }[];
   closed: boolean;
   color: string;
+  visible: boolean;
   spiral: SpiralSnap;
 }
 
@@ -242,6 +267,7 @@ function takeSnapshot(): Snapshot {
       })),
       closed: p.closed,
       color: p.color,
+      visible: p.visible,
       spiral: snapSpiral(p.spiral),
     })),
     activePathIndex: activePathIndex.value,
@@ -276,6 +302,7 @@ function applySnapshot(snap: Snapshot) {
       })),
       closed: ps.closed,
       color: ps.color,
+      visible: ps.visible ?? true,
       spiral: sp,
     });
     paths.push(p);
@@ -612,6 +639,282 @@ function symmetrizeHandles() {
   }
 }
 
+// ── Project data (central settings object) ──────────────────────────────────
+
+export interface ProjectData {
+  version: number;
+  paths: {
+    id: string;
+    name: string;
+    nodes: { id: string; x: number; y: number; handleIn: Vec2; handleOut: Vec2 }[];
+    closed: boolean;
+    color: string;
+    visible?: boolean;
+    spiral: {
+      enabled: boolean;
+      radius: { nodes: { id: string; t: number; value: number; handleIn: { dt: number; dv: number }; handleOut: { dt: number; dv: number } }[]; min: number; max: number };
+      elliptic: { nodes: { id: string; t: number; value: number; handleIn: { dt: number; dv: number }; handleOut: { dt: number; dv: number } }[]; min: number; max: number };
+      orientation: { nodes: { id: string; t: number; value: number; handleIn: { dt: number; dv: number }; handleOut: { dt: number; dv: number } }[]; min: number; max: number };
+      frequency: { nodes: { id: string; t: number; value: number; handleIn: { dt: number; dv: number }; handleOut: { dt: number; dv: number } }[]; min: number; max: number };
+      speed: { nodes: { id: string; t: number; value: number; handleIn: { dt: number; dv: number }; handleOut: { dt: number; dv: number } }[]; min: number; max: number };
+    };
+  }[];
+  activePathIndex: number;
+  settings: {
+    showSpines: boolean;
+    blendMode: BlendMode;
+    toolbarDock: DockPosition;
+    propsDock: DockPosition;
+  };
+}
+
+function serializePropCurve(c: PropCurve) {
+  return {
+    nodes: c.nodes.map(n => ({
+      id: n.id, t: n.t, value: n.value,
+      handleIn: { ...n.handleIn }, handleOut: { ...n.handleOut },
+    })),
+    min: c.min,
+    max: c.max,
+  };
+}
+
+function exportProject(): ProjectData {
+  return {
+    version: 1,
+    paths: paths.map(p => ({
+      id: p.id,
+      name: p.name,
+      nodes: p.nodes.map(n => ({
+        id: n.id, x: n.x, y: n.y,
+        handleIn: { ...n.handleIn }, handleOut: { ...n.handleOut },
+      })),
+      closed: p.closed,
+      color: p.color,
+      visible: p.visible,
+      spiral: {
+        enabled: p.spiral.enabled,
+        radius: serializePropCurve(p.spiral.radius),
+        elliptic: serializePropCurve(p.spiral.elliptic),
+        orientation: serializePropCurve(p.spiral.orientation),
+        frequency: serializePropCurve(p.spiral.frequency),
+        speed: serializePropCurve(p.spiral.speed),
+      },
+    })),
+    activePathIndex: activePathIndex.value,
+    settings: {
+      showSpines: showSpines.value,
+      blendMode: spiralBlendMode.value,
+      toolbarDock: toolbarDock.value,
+      propsDock: propsDock.value,
+    },
+  };
+}
+
+function importProject(data: ProjectData) {
+  // Restore paths
+  paths.splice(0, paths.length);
+  for (const ps of data.paths) {
+    const sp = defaultBezierSpiralConfig();
+    sp.enabled = ps.spiral.enabled;
+    for (const key of ["radius", "elliptic", "orientation", "frequency", "speed"] as const) {
+      const src = ps.spiral[key];
+      sp[key].nodes.splice(0, sp[key].nodes.length,
+        ...src.nodes.map(n => ({ id: n.id, t: n.t, value: n.value, handleIn: { ...n.handleIn }, handleOut: { ...n.handleOut } })),
+      );
+      sp[key].min = src.min;
+      sp[key].max = src.max;
+    }
+    const p: BezierPath = reactive({
+      id: ps.id,
+      name: ps.name,
+      nodes: ps.nodes.map(n => ({
+        id: n.id, x: n.x, y: n.y,
+        handleIn: { ...n.handleIn }, handleOut: { ...n.handleOut },
+      })),
+      closed: ps.closed,
+      color: ps.color,
+      visible: ps.visible ?? true,
+      spiral: sp,
+    });
+    paths.push(p);
+  }
+
+  // Restore active path
+  activePathIndex.value = Math.min(data.activePathIndex, paths.length - 1);
+  selectedIds.clear();
+
+  // Restore settings
+  if (data.settings) {
+    showSpines.value = data.settings.showSpines ?? true;
+    spiralBlendMode.value = data.settings.blendMode ?? "screen";
+    toolbarDock.value = data.settings.toolbarDock ?? "top";
+    propsDock.value = data.settings.propsDock ?? "right";
+  }
+
+  // Bump ID counters past any restored IDs
+  for (const ps of data.paths) {
+    const pNum = parseInt(ps.id.slice(1));
+    if (pNum >= _nextId) _nextId = pNum + 1;
+    for (const n of ps.nodes) {
+      const num = parseInt(n.id.slice(1));
+      if (num >= _nextId) _nextId = num + 1;
+    }
+    for (const key of ["radius", "elliptic", "orientation", "frequency", "speed"] as const) {
+      for (const pn of ps.spiral[key].nodes) bumpPropId(pn.id);
+    }
+  }
+
+  // Clear undo/redo stacks
+  undoStack.length = 0;
+  redoStack.length = 0;
+  canUndo.value = false;
+  canRedo.value = false;
+}
+
+function downloadProject() {
+  const data = exportProject();
+  const json = JSON.stringify(data, null, 2);
+  const blob = new Blob([json], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `spirograph-${Date.now()}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function uploadProject(): Promise<void> {
+  return new Promise((resolve) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".json";
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) { resolve(); return; }
+      try {
+        const text = await file.text();
+        const data = JSON.parse(text) as ProjectData;
+        if (!data.version || !data.paths) throw new Error("Invalid project file");
+        importProject(data);
+      } catch (e) {
+        console.error("Failed to import project:", e);
+      }
+      resolve();
+    };
+    input.click();
+  });
+}
+
+function downloadSVG() {
+  // Compute bounding box across all spiral points + spine nodes
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  const pathData: { name: string; points: { x: number; y: number }[]; color: string; spineD: string }[] = [];
+
+  for (const p of paths) {
+    if (!p.visible || p.nodes.length < 2) continue;
+
+    // Estimate path length for sample count
+    const segCount = p.closed ? p.nodes.length : p.nodes.length - 1;
+    let pathLen = 0;
+    for (let seg = 0; seg < segCount; seg++) {
+      const a = p.nodes[seg]!;
+      const b = p.nodes[(seg + 1) % p.nodes.length]!;
+      let px = a.x, py = a.y;
+      for (let i = 1; i <= 20; i++) {
+        const t = i / 20;
+        const mt = 1 - t;
+        const x = mt ** 3 * a.x + 3 * mt ** 2 * t * (a.x + a.handleOut.x) + 3 * mt * t ** 2 * (b.x + b.handleIn.x) + t ** 3 * b.x;
+        const y = mt ** 3 * a.y + 3 * mt ** 2 * t * (a.y + a.handleOut.y) + 3 * mt * t ** 2 * (b.y + b.handleIn.y) + t ** 3 * b.y;
+        pathLen += Math.sqrt((x - px) ** 2 + (y - py) ** 2);
+        px = x; py = y;
+      }
+    }
+
+    // Build spine SVG path
+    let spineD = "";
+    for (let seg = 0; seg < segCount; seg++) {
+      const a = p.nodes[seg]!;
+      const b = p.nodes[(seg + 1) % p.nodes.length]!;
+      if (seg === 0) spineD += `M${a.x},${a.y}`;
+      spineD += ` C${a.x + a.handleOut.x},${a.y + a.handleOut.y} ${b.x + b.handleIn.x},${b.y + b.handleIn.y} ${b.x},${b.y}`;
+    }
+    if (p.closed) spineD += " Z";
+
+    // Generate spiral
+    if (p.spiral.enabled) {
+      const maxFreq = Math.max(...p.spiral.frequency.nodes.map(n => n.value), 1);
+      const maxSpeed = Math.max(...p.spiral.speed.nodes.map(n => n.value), 1);
+      const numSamples = Math.max(600, Math.min(20000, Math.round(pathLen * maxFreq * maxSpeed * 0.5)));
+      const samples = sampleBezierPath(p.nodes, p.closed, numSamples);
+      const pts = generateSpiralPoints(samples, p.spiral);
+
+      for (const pt of pts) {
+        if (pt.x < minX) minX = pt.x;
+        if (pt.y < minY) minY = pt.y;
+        if (pt.x > maxX) maxX = pt.x;
+        if (pt.y > maxY) maxY = pt.y;
+      }
+      pathData.push({ name: p.name, points: pts, color: p.color, spineD });
+    } else {
+      // No spiral — just include spine in bounding box
+      for (const n of p.nodes) {
+        if (n.x < minX) minX = n.x;
+        if (n.y < minY) minY = n.y;
+        if (n.x > maxX) maxX = n.x;
+        if (n.y > maxY) maxY = n.y;
+      }
+      pathData.push({ name: p.name, points: [], color: p.color, spineD });
+    }
+  }
+
+  if (pathData.length === 0) return;
+
+  const pad = 20;
+  const vx = minX - pad;
+  const vy = minY - pad;
+  const vw = (maxX - minX) + pad * 2;
+  const vh = (maxY - minY) + pad * 2;
+
+  let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vx} ${vy} ${vw} ${vh}" width="${Math.round(vw)}" height="${Math.round(vh)}">\n`;
+  svg += `  <rect x="${vx}" y="${vy}" width="${vw}" height="${vh}" fill="#0f0f1a"/>\n`;
+
+  // Spines
+  if (showSpines.value) {
+    for (const pd of pathData) {
+      if (pd.spineD) {
+        svg += `  <!-- spine: ${pd.name} -->\n`;
+        svg += `  <path d="${pd.spineD}" fill="none" stroke="${pd.color}" stroke-width="1.5" stroke-opacity="0.5"/>\n`;
+      }
+    }
+  }
+
+  // Spirals with blend mode
+  const blend = spiralBlendMode.value;
+  if (blend !== "source-over") {
+    svg += `  <g style="mix-blend-mode: ${blend}">\n`;
+  }
+  for (const pd of pathData) {
+    if (pd.points.length < 2) continue;
+    svg += `  <!-- spiral: ${pd.name} -->\n`;
+    const d = "M" + pd.points.map(p => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" L");
+    svg += `  <path d="${d}" fill="none" stroke="${pd.color}" stroke-width="1.2" stroke-opacity="0.85"/>\n`;
+  }
+  if (blend !== "source-over") {
+    svg += `  </g>\n`;
+  }
+
+  svg += `</svg>`;
+
+  const blob = new Blob([svg], { type: "image/svg+xml" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `spirograph-${Date.now()}.svg`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 // ── Composable export ────────────────────────────────────────────────────────
 
 export function useBezierStore() {
@@ -635,6 +938,8 @@ export function useBezierStore() {
     duplicatePath,
     renamePath,
     setPathColor,
+    togglePathVisible,
+    movePathOrder,
 
     // Selection
     select,
@@ -680,5 +985,12 @@ export function useBezierStore() {
     showSpines,
     spiralBlendMode,
     BLEND_MODES,
+
+    // Import / Export
+    exportProject,
+    importProject,
+    downloadProject,
+    uploadProject,
+    downloadSVG,
   };
 }

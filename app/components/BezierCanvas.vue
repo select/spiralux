@@ -208,7 +208,7 @@ function drawPathSpiral(p: BezierPath, alpha: number) {
   // Scale samples: ~2 samples per pixel of path length, boosted by max frequency
   const maxFreq = Math.max(...p.spiral.frequency.nodes.map(n => n.value), 1);
   const maxSpeed = Math.max(...p.spiral.speed.nodes.map(n => n.value), 1);
-  const numSamples = Math.max(200, Math.min(10000, Math.round(pathLen * maxFreq * maxSpeed * 0.15)));
+  const numSamples = Math.max(600, Math.min(20000, Math.round(pathLen * maxFreq * maxSpeed * 0.5)));
   const samples = sampleBezierPath(p.nodes, p.closed, numSamples);
   const pts = generateSpiralPoints(samples, p.spiral);
   if (pts.length < 2) return;
@@ -246,7 +246,7 @@ function draw() {
   for (let pi = 0; pi < paths.length; pi++) {
     if (pi === activePathIndex.value) continue;
     const p = paths[pi]!;
-    if (p.nodes.length === 0) continue;
+    if (p.nodes.length === 0 || !p.visible) continue;
     if (showSpines.value) {
       drawPathCurves(p, p.color + "80", 2 / zoom.value);
       for (const n of p.nodes) {
@@ -261,7 +261,7 @@ function draw() {
 
   // ── Draw active path ──
   const p = ap();
-  if (p && p.nodes.length > 0) {
+  if (p && p.nodes.length > 0 && p.visible) {
     if (showSpines.value) drawPathCurves(p, p.color, 2.5 / zoom.value);
     drawPathSpiral(p, 0.85);
 
