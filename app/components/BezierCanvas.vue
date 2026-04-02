@@ -229,8 +229,10 @@ function drawPathSpiral(p: BezierPath, alpha: number) {
 function draw() {
   const c = canvasEl.value;
   if (!c || !ctx) return;
-  const w = c.getBoundingClientRect().width;
-  const h = c.getBoundingClientRect().height;
+  const rect = c.getBoundingClientRect();
+  const w = c.width;
+  const h = c.height;
+  ctx.resetTransform();
   ctx.clearRect(0, 0, w, h);
 
   ctx.save();
@@ -240,7 +242,7 @@ function draw() {
   const selectedColor = "#22d3ee";
   const handleColor = "#f59e0b";
 
-  drawGrid(w, h);
+  drawGrid(rect.width, rect.height);
 
   // ── Draw inactive paths ──
   for (let pi = 0; pi < paths.length; pi++) {
