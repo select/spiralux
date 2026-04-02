@@ -88,3 +88,4 @@ id,timestamp,target,mode,steps,passes,colors,opacity,drive_teeth,x_arm_gears,y_a
 87,2026-03-29T21:03:41.511Z,IMG_3504.webp,spiral,30000,1,#dde8f0,0.7,20,spiral: g=0 + ,—,0,0.02,0.25,1200,1200,#1c1c1e,"trefoil lobe: slower orbit -0.008, wider gap between start/end",exp-0087.svg,exp-0087.png
 88,2026-03-29T21:04:57.421Z,IMG_3504.webp,spiral,30000,1,#dde8f0,0.7,20,spiral: g=0 + ,—,0,0.02,0.25,1200,1200,#1c1c1e,"like #78 but mirrored smaller: orbit R 30→230→30, size 3→130→3, 3-lobe mod 0.25",exp-0088.svg,exp-0088.png
 89,2026-03-29T21:06:04.984Z,IMG_3504.webp,spiral,30000,1,#dde8f0,0.7,20,spiral: g=0 + ,—,0,0.02,0.25,1200,1200,#1c1c1e,"outwardBias 0.4: egg-shaped loops, fat side always points away from center",exp-0089.svg,exp-0089.png
+90,2026-03-29T21:22:22.506Z,IMG_3504.webp,spiral,30000,1,#dde8f0,0.7,20,spiral: g=0 + ,—,0,0.02,0.25,1200,1200,#1c1c1e,#88 + outwardBias 0.35: more asymmetric egg shape,exp-0090.svg,exp-0090.png

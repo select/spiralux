@@ -28,6 +28,16 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* ===== Number input — hide spin buttons ===== */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
 /* ===== Range slider thumb — no Tailwind pseudo for this ===== */
 input[type="range"] { -webkit-appearance: none; appearance: none; }
 input[type="range"]::-webkit-slider-thumb {

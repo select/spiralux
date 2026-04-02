@@ -15,10 +15,21 @@ onMounted(() => {
         class="relative flex items-center gap-2 px-5 py-3 text-sm font-semibold transition-colors duration-150"
         :class="$route.path === '/' ? 'text-accent' : 'text-secondary hover:text-primary'"
       >
-        🌀 Studio
+        <i class="i-mdi-vector-bezier inline-block mr-1" /> Bezier
         <span
           class="absolute bottom-0 inset-x-0 h-0.5 rounded-t transition-all duration-150"
           :class="$route.path === '/' ? 'bg-accent' : 'bg-transparent'"
+        />
+      </NuxtLink>
+      <NuxtLink
+        to="/studio"
+        class="relative flex items-center gap-2 px-5 py-3 text-sm font-semibold transition-colors duration-150"
+        :class="$route.path === '/studio' ? 'text-accent' : 'text-secondary hover:text-primary'"
+      >
+        <i class="i-mdi-cog-outline inline-block mr-1" /> Studio
+        <span
+          class="absolute bottom-0 inset-x-0 h-0.5 rounded-t transition-all duration-150"
+          :class="$route.path === '/studio' ? 'bg-accent' : 'bg-transparent'"
         />
       </NuxtLink>
       <NuxtLink
@@ -26,16 +37,12 @@ onMounted(() => {
         class="relative flex items-center gap-2 px-5 py-3 text-sm font-semibold transition-colors duration-150"
         :class="$route.path.startsWith('/gallery') ? 'text-accent' : 'text-secondary hover:text-primary'"
       >
-        🔬 Gallery
+        <i class="i-mdi-image-multiple-outline inline-block mr-1" /> Gallery
         <span
           class="absolute bottom-0 inset-x-0 h-0.5 rounded-t transition-all duration-150"
           :class="$route.path.startsWith('/gallery') ? 'bg-accent' : 'bg-transparent'"
         />
       </NuxtLink>
-      <span class="ml-auto mb-2 text-[10px] text-muted hidden sm:flex items-center gap-1">
-        <kbd class="inline-block border border-border rounded px-1.5 py-0.5 font-mono text-[10px] text-muted">G</kbd>
-        toggle
-      </span>
     </nav>
 
     <!-- ── Page content ─────────────────────────────────────────────────── -->
@@ -54,11 +61,10 @@ if (import.meta.client) {
     if (e.key === "g" || e.key === "G") {
       const router = useRouter();
       const route = useRoute();
-      if (route.path.startsWith("/gallery")) {
-        router.push("/");
-      } else {
-        router.push("/gallery");
-      }
+      // Cycle: / → /studio → /gallery → /
+      if (route.path === "/") router.push("/studio");
+      else if (route.path === "/studio") router.push("/gallery");
+      else router.push("/");
     }
   });
 }

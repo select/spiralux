@@ -26,6 +26,7 @@ const config: ExperimentConfig = {
     spinSpeed:  2,
     lobes:      3,
     lobeDepth:  0.25,
+    outwardBias: 0.35,
     wobbles: [],
     envelope: [
       { t: 0,    radius: 3  },

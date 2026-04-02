@@ -152,7 +152,7 @@ function applyExperiment(snap: ExperimentSnapshot) {
   motorTheta.value = 0;
   loadedFromExpId.value = snap.id;
 
-  navigateTo("/");
+  navigateTo("/studio");
 }
 
 // ── Composable export ────────────────────────────────────────────────────────
