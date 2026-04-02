@@ -229,11 +229,13 @@ function drawPathSpiral(p: BezierPath, alpha: number) {
 function draw() {
   const c = canvasEl.value;
   if (!c || !ctx) return;
+  const dpr = window.devicePixelRatio || 1;
   const rect = c.getBoundingClientRect();
   const w = c.width;
   const h = c.height;
   ctx.resetTransform();
   ctx.clearRect(0, 0, w, h);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
   ctx.save();
   ctx.translate(panX.value, panY.value);
