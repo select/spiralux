@@ -90,8 +90,7 @@ export function drawPathSpiral(
 
   const pathLen = estimatePathLength(path.nodes, path.closed);
   const maxFreq = Math.max(...path.spiral.frequency.nodes.map(n => n.value), 1);
-  const maxSpeed = Math.max(...path.spiral.speed.nodes.map(n => n.value), 1);
-  const numSamples = Math.max(600, Math.min(20000, Math.round(pathLen * maxFreq * maxSpeed * 0.5)));
+  const numSamples = Math.max(600, Math.min(20000, Math.round(pathLen * maxFreq * 0.5)));
   const samples = sampleBezierPath(path.nodes, path.closed, numSamples);
   const pts = generateSpiralPoints(samples, path.spiral);
   if (pts.length < 2) { ctx.globalCompositeOperation = prevComposite; return; }

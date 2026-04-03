@@ -33,7 +33,6 @@ export interface BezierSpiralConfig {
   elliptic: PropCurve;
   orientation: PropCurve;
   frequency: PropCurve;
-  speed: PropCurve;
 }
 
 // ── ID generator (shared with main store via import) ─────────────────────────
@@ -91,14 +90,6 @@ export function defaultBezierSpiralConfig(): BezierSpiralConfig {
       max: 60,
       unit: "/len",
       nodes: [makePropNode(0, 12), makePropNode(1, 12)],
-    },
-    speed: {
-      label: "Speed",
-      color: "#a855f7",
-      min: 0.01,
-      max: 5,
-      unit: "×",
-      nodes: [makePropNode(0, 1), makePropNode(1, 1)],
     },
   };
 }
@@ -255,9 +246,8 @@ export function generateSpiralPoints(
     const elliptic = evaluatePropCurve(config.elliptic, t);
     const orientDeg = evaluatePropCurve(config.orientation, t);
     const freq = evaluatePropCurve(config.frequency, t);
-    const speed = evaluatePropCurve(config.speed, t);
 
-    // Advance angle based on frequency, speed, and curvature compensation
+    // Advance angle based on frequency and curvature compensation
     if (i > 0) {
       const prev = samples[i - 1]!;
       const ds = Math.sqrt(
@@ -269,12 +259,11 @@ export function generateSpiralPoints(
       const cross = prev.tx * s.ty - prev.ty * s.tx;
       const curvature = ds > 0.001 ? cross / ds : 0;
 
-      // On a curved backbone, the offset curve at distance d from the backbone
-      // has arc length ds × (1 + κ·d). Use the previous normal offset to
-      // compute the effective arc length at the spiral point's actual position.
-      // This keeps coil density visually uniform regardless of radius + curvature.
-      const stretch = Math.max(1 + curvature * prevNormalOffset, 0.05);
-      cumulativeAngle += freq * ds * 0.05 * speed * stretch;
+      // On a curved backbone, a point at signed normal offset d traces an
+      // effective arc of ds × (1 − κ·d).  Advance the angle proportionally
+      // so loops stay uniformly spaced regardless of radius + curvature.
+      const stretch = Math.max(1 - curvature * prevNormalOffset, 0.05);
+      cumulativeAngle += freq * ds * 0.05 * stretch;
     }
 
     const orientRad = (orientDeg * Math.PI) / 180;

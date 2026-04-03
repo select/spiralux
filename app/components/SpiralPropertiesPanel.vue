@@ -12,10 +12,10 @@ import type { PropCurve } from "~/utils/spiral";
 const { path: activePath, pushUndo } = useBezierStore();
 
 // Which curve key is expanded (null = all collapsed/compact)
-type CurveKey = "radius" | "elliptic" | "orientation" | "frequency" | "speed";
+type CurveKey = "radius" | "elliptic" | "orientation" | "frequency";
 const expandedKey = ref<CurveKey | null>(null);
 
-const CURVE_KEYS: CurveKey[] = ["radius", "frequency", "speed", "elliptic", "orientation"];
+const CURVE_KEYS: CurveKey[] = ["radius", "frequency", "elliptic", "orientation"];
 
 function curveFor(key: CurveKey): PropCurve | undefined {
   return activePath.value?.spiral[key];

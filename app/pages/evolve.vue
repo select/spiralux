@@ -96,10 +96,10 @@ const MUTATION = reactive({
 
   // ── Spine path ──
   spine: {
-    addNode:           { prob: 0.20, maxNodes: 12 },    // prob × s
-    removeNode:        { prob: 0.15, minNodes: 3 },     // prob × s
-    movePosition:      { prob: 0.80, scale: 30 },       // scale = max px × s
-    moveHandle:        { prob: 0.70, scale: 20 },       // scale = max px × s
+    addNode:           { prob: 0.35, maxNodes: 12 },    // prob × s
+    removeNode:        { prob: 0.25, minNodes: 3 },     // prob × s
+    movePosition:      { prob: 0.90, scale: 60 },       // scale = max px × s
+    moveHandle:        { prob: 0.85, scale: 45 },       // scale = max px × s
     toggleClosed:      { prob: 0.05 },                   // prob × s
   },
 
@@ -115,14 +115,23 @@ const MUTATION = reactive({
   },
 
   // ── Color ──
-  color:               { prob: 0.15, shift: 30 },       // prob × s, shift = max RGB delta × s
+  color:               { prob: 0, shift: 30 },       // prob × s, shift = max RGB delta × s
 
   // ── Orientation rule ──
+  // Skip orientation mutation when elliptic ≈ 1 (circle)
+  // Per-curve selection probability (0 = never mutate this curve)
+  curveProb: {
+    radius: 1,
+    elliptic: 1,
+    orientation: 1,
+    frequency: 0,
+  },
+
   // Skip orientation mutation when elliptic ≈ 1 (circle)
   orientationCircularThreshold: 0.05,
 });
 
-const PROP_KEYS = ["radius", "elliptic", "orientation", "frequency", "speed"] as const;
+const PROP_KEYS = ["radius", "elliptic", "orientation", "frequency"] as const;
 type SpineNode = ProjectData["paths"][0]["nodes"][0];
 type PropCurveData = ProjectData["paths"][0]["spiral"]["radius"];
 
@@ -133,7 +142,7 @@ function mutateProject(source: ProjectData): ProjectData {
   for (const path of proj.paths) {
     mutateSpine(path, s);
 
-    const keys = [...PROP_KEYS];
+    const keys = PROP_KEYS.filter(k => MUTATION.curveProb[k] > 0 && Math.random() < MUTATION.curveProb[k]);
     shuffle(keys);
     const { min, max } = MUTATION.curvesPerVariant;
     const numCurves = min + Math.floor(Math.random() * (max - min + 1));
@@ -392,7 +401,6 @@ function reconstructSpiralConfig(s: ProjectData["paths"][0]["spiral"]): BezierSp
     elliptic: { label: "Elliptic", color: "#f59e0b", unit: "×" },
     orientation: { label: "Orient", color: "#10b981", unit: "°" },
     frequency: { label: "Freq", color: "#ec4899", unit: "×" },
-    speed: { label: "Speed", color: "#06b6d4", unit: "×" },
   };
   function toCurve(key: keyof typeof defs): PropCurve {
     const src = s[key]; const d = defs[key];
@@ -401,7 +409,7 @@ function reconstructSpiralConfig(s: ProjectData["paths"][0]["spiral"]): BezierSp
     };
   }
   return { enabled: s.enabled, radius: toCurve("radius"), elliptic: toCurve("elliptic"),
-    orientation: toCurve("orientation"), frequency: toCurve("frequency"), speed: toCurve("speed") };
+    orientation: toCurve("orientation"), frequency: toCurve("frequency") };
 }
 
 function projectToRenderPaths(proj: ProjectData): RenderablePath[] {
@@ -442,8 +450,8 @@ function onWheel(e: WheelEvent) {
     panY.value = my - (my - panY.value) * (newZoom / zoom.value);
     zoom.value = newZoom;
   } else {
-    panX.value -= e.deltaX;
-    panY.value -= e.deltaY;
+    panX.value -= e.deltaX * 0.3;
+    panY.value -= e.deltaY * 0.3;
   }
   renderAll();
 }

@@ -404,8 +404,8 @@ function onWheel(e: WheelEvent) {
     zoom.value = newZoom;
   } else {
     // Scroll = pan canvas
-    panX.value -= e.deltaX;
-    panY.value -= e.deltaY;
+    panX.value -= e.deltaX * 0.3;
+    panY.value -= e.deltaY * 0.3;
   }
   draw();
 }

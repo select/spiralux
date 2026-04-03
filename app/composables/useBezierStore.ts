@@ -153,7 +153,7 @@ function duplicatePath(index: number) {
   p.visible = src.visible;
   // Deep-copy spiral config
   p.spiral.enabled = src.spiral.enabled;
-  for (const key of ["radius", "elliptic", "orientation", "frequency", "speed"] as const) {
+  for (const key of ["radius", "elliptic", "orientation", "frequency"] as const) {
     const srcCurve = src.spiral[key];
     p.spiral[key].nodes.splice(0, p.spiral[key].nodes.length,
       ...srcCurve.nodes.map(n => ({ ...n, id: propUid(), handleIn: { ...n.handleIn }, handleOut: { ...n.handleOut } })),
@@ -215,7 +215,6 @@ interface SpiralSnap {
   elliptic: PropCurveSnap;
   orientation: PropCurveSnap;
   frequency: PropCurveSnap;
-  speed: PropCurveSnap;
 }
 
 interface PathSnapshot {
@@ -252,7 +251,7 @@ function snapSpiral(s: BezierSpiralConfig): SpiralSnap {
     elliptic: snapPropCurve(s.elliptic),
     orientation: snapPropCurve(s.orientation),
     frequency: snapPropCurve(s.frequency),
-    speed: snapPropCurve(s.speed),
+
   };
 }
 
@@ -292,7 +291,7 @@ function applySnapshot(snap: Snapshot) {
     restorePropCurve(sp.elliptic, ps.spiral.elliptic);
     restorePropCurve(sp.orientation, ps.spiral.orientation);
     restorePropCurve(sp.frequency, ps.spiral.frequency);
-    restorePropCurve(sp.speed, ps.spiral.speed);
+
     const p: BezierPath = reactive({
       id: ps.id,
       name: ps.name,
@@ -319,7 +318,7 @@ function applySnapshot(snap: Snapshot) {
       if (num >= _nextId) _nextId = num + 1;
     }
     // Restore prop node ids
-    for (const key of ["radius", "elliptic", "orientation", "frequency", "speed"] as const) {
+    for (const key of ["radius", "elliptic", "orientation", "frequency"] as const) {
       for (const pn of ps.spiral[key].nodes) bumpPropId(pn.id);
     }
   }
@@ -656,7 +655,6 @@ export interface ProjectData {
       elliptic: { nodes: { id: string; t: number; value: number; handleIn: { dt: number; dv: number }; handleOut: { dt: number; dv: number } }[]; min: number; max: number };
       orientation: { nodes: { id: string; t: number; value: number; handleIn: { dt: number; dv: number }; handleOut: { dt: number; dv: number } }[]; min: number; max: number };
       frequency: { nodes: { id: string; t: number; value: number; handleIn: { dt: number; dv: number }; handleOut: { dt: number; dv: number } }[]; min: number; max: number };
-      speed: { nodes: { id: string; t: number; value: number; handleIn: { dt: number; dv: number }; handleOut: { dt: number; dv: number } }[]; min: number; max: number };
     };
   }[];
   activePathIndex: number;
@@ -698,7 +696,6 @@ function exportProject(): ProjectData {
         elliptic: serializePropCurve(p.spiral.elliptic),
         orientation: serializePropCurve(p.spiral.orientation),
         frequency: serializePropCurve(p.spiral.frequency),
-        speed: serializePropCurve(p.spiral.speed),
       },
     })),
     activePathIndex: activePathIndex.value,
@@ -717,7 +714,7 @@ function importProject(data: ProjectData) {
   for (const ps of data.paths) {
     const sp = defaultBezierSpiralConfig();
     sp.enabled = ps.spiral.enabled;
-    for (const key of ["radius", "elliptic", "orientation", "frequency", "speed"] as const) {
+    for (const key of ["radius", "elliptic", "orientation", "frequency"] as const) {
       const src = ps.spiral[key];
       sp[key].nodes.splice(0, sp[key].nodes.length,
         ...src.nodes.map(n => ({ id: n.id, t: n.t, value: n.value, handleIn: { ...n.handleIn }, handleOut: { ...n.handleOut } })),
@@ -760,7 +757,7 @@ function importProject(data: ProjectData) {
       const num = parseInt(n.id.slice(1));
       if (num >= _nextId) _nextId = num + 1;
     }
-    for (const key of ["radius", "elliptic", "orientation", "frequency", "speed"] as const) {
+    for (const key of ["radius", "elliptic", "orientation", "frequency"] as const) {
       for (const pn of ps.spiral[key].nodes) bumpPropId(pn.id);
     }
   }
@@ -844,8 +841,7 @@ function downloadSVG() {
     // Generate spiral
     if (p.spiral.enabled) {
       const maxFreq = Math.max(...p.spiral.frequency.nodes.map(n => n.value), 1);
-      const maxSpeed = Math.max(...p.spiral.speed.nodes.map(n => n.value), 1);
-      const numSamples = Math.max(600, Math.min(20000, Math.round(pathLen * maxFreq * maxSpeed * 0.5)));
+      const numSamples = Math.max(600, Math.min(20000, Math.round(pathLen * maxFreq * 0.5)));
       const samples = sampleBezierPath(p.nodes, p.closed, numSamples);
       const pts = generateSpiralPoints(samples, p.spiral);
 
