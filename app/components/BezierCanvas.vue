@@ -5,7 +5,8 @@
  */
 import { ref, onMounted, onUnmounted, watch, nextTick } from "vue";
 import type { BezierNode, BezierPath, Vec2 } from "~/composables/useBezierStore";
-import { sampleBezierPath, generateSpiralPoints } from "~/utils/spiral";
+import { renderPaths, drawPathCurves, drawPathSpiral, estimatePathLength } from "~/composables/useCanvasRenderer";
+import type { CanvasView } from "~/composables/useCanvasRenderer";
 
 const {
   paths,
@@ -32,7 +33,6 @@ const {
 } = useBezierStore();
 
 const canvasEl = ref<HTMLCanvasElement | null>(null);
-let ctx: CanvasRenderingContext2D | null = null;
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -156,206 +156,43 @@ function hitTestInactivePath(wx: number, wy: number): number | null {
   return null;
 }
 
+
 // ── Drawing ──────────────────────────────────────────────────────────────────
 
 function cssProp(name: string, fallback: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
 }
 
-function drawPathCurves(p: BezierPath, color: string, lineWidth: number) {
-  if (!ctx) return;
-  const segCount = p.closed ? p.nodes.length : p.nodes.length - 1;
-  for (let seg = 0; seg < segCount; seg++) {
-    const a = p.nodes[seg]!;
-    const b = p.nodes[(seg + 1) % p.nodes.length]!;
-    ctx.beginPath();
-    ctx.moveTo(a.x, a.y);
-    ctx.bezierCurveTo(
-      a.x + a.handleOut.x, a.y + a.handleOut.y,
-      b.x + b.handleIn.x, b.y + b.handleIn.y,
-      b.x, b.y,
-    );
-    ctx.strokeStyle = color;
-    ctx.lineWidth = lineWidth;
-    ctx.stroke();
-  }
-}
-
-function estimatePathLength(p: BezierPath): number {
-  const segCount = p.closed ? p.nodes.length : p.nodes.length - 1;
-  if (segCount <= 0) return 0;
-  let len = 0;
-  const stepsPerSeg = 20;
-  for (let seg = 0; seg < segCount; seg++) {
-    const a = p.nodes[seg]!;
-    const b = p.nodes[(seg + 1) % p.nodes.length]!;
-    let px = a.x, py = a.y;
-    for (let i = 1; i <= stepsPerSeg; i++) {
-      const t = i / stepsPerSeg;
-      const mt = 1 - t;
-      const x = mt ** 3 * a.x + 3 * mt ** 2 * t * (a.x + a.handleOut.x) + 3 * mt * t ** 2 * (b.x + b.handleIn.x) + t ** 3 * b.x;
-      const y = mt ** 3 * a.y + 3 * mt ** 2 * t * (a.y + a.handleOut.y) + 3 * mt * t ** 2 * (b.y + b.handleIn.y) + t ** 3 * b.y;
-      len += Math.sqrt((x - px) ** 2 + (y - py) ** 2);
-      px = x; py = y;
-    }
-  }
-  return len;
-}
-
-function drawPathSpiral(p: BezierPath, alpha: number) {
-  if (!ctx || !p.spiral.enabled || p.nodes.length < 2) return;
-  const prevComposite = ctx.globalCompositeOperation;
-  ctx.globalCompositeOperation = spiralBlendMode.value as GlobalCompositeOperation;
-  const pathLen = estimatePathLength(p);
-  // Scale samples: ~2 samples per pixel of path length, boosted by max frequency
-  const maxFreq = Math.max(...p.spiral.frequency.nodes.map(n => n.value), 1);
-  const maxSpeed = Math.max(...p.spiral.speed.nodes.map(n => n.value), 1);
-  const numSamples = Math.max(600, Math.min(20000, Math.round(pathLen * maxFreq * maxSpeed * 0.5)));
-  const samples = sampleBezierPath(p.nodes, p.closed, numSamples);
-  const pts = generateSpiralPoints(samples, p.spiral);
-  if (pts.length < 2) return;
-  ctx.beginPath();
-  ctx.moveTo(pts[0]!.x, pts[0]!.y);
-  for (let i = 1; i < pts.length; i++) {
-    ctx.lineTo(pts[i]!.x, pts[i]!.y);
-  }
-  // Color with alpha
-  const hex = p.color;
-  const alphaHex = Math.round(alpha * 255).toString(16).padStart(2, "0");
-  ctx.strokeStyle = hex + alphaHex;
-  ctx.lineWidth = 1.2 / zoom.value;
-  ctx.stroke();
-  ctx.globalCompositeOperation = prevComposite;
-}
-
 function draw() {
   const c = canvasEl.value;
-  if (!c || !ctx) return;
-  const dpr = window.devicePixelRatio || 1;
-  const rect = c.getBoundingClientRect();
-  const w = c.width;
-  const h = c.height;
-  ctx.resetTransform();
-  ctx.clearRect(0, 0, w, h);
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (!c) return;
 
-  ctx.save();
-  ctx.translate(panX.value, panY.value);
-  ctx.scale(zoom.value, zoom.value);
+  const view: CanvasView = { panX: panX.value, panY: panY.value, zoom: zoom.value };
 
-  const selectedColor = "#22d3ee";
-  const handleColor = "#f59e0b";
+  renderPaths(c, paths as any, activePathIndex.value, view, {
+    showSpines: showSpines.value,
+    blendMode: spiralBlendMode.value,
+    selectedIds: selectedIds,
+    hoveredId: hoveredId.value,
+  });
 
-  drawGrid(rect.width, rect.height);
-
-  // ── Draw inactive paths ──
-  for (let pi = 0; pi < paths.length; pi++) {
-    if (pi === activePathIndex.value) continue;
-    const p = paths[pi]!;
-    if (p.nodes.length === 0 || !p.visible) continue;
-    if (showSpines.value) {
-      drawPathCurves(p, p.color + "80", 2 / zoom.value);
-      for (const n of p.nodes) {
-        ctx.beginPath();
-        ctx.arc(n.x, n.y, 3 / zoom.value, 0, Math.PI * 2);
-        ctx.fillStyle = p.color + "60";
-        ctx.fill();
-      }
-    }
-    drawPathSpiral(p, 0.4);
-  }
-
-  // ── Draw active path ──
-  const p = ap();
-  if (p && p.nodes.length > 0 && p.visible) {
-    if (showSpines.value) drawPathCurves(p, p.color, 2.5 / zoom.value);
-    drawPathSpiral(p, 0.85);
-
-    if (showSpines.value) {
-    // Handles & nodes
-    for (const n of p.nodes) {
-      const isSelected = selectedIds.has(n.id);
-      const isHovered = hoveredId.value === n.id;
-
-      const hInAbs = { x: n.x + n.handleIn.x, y: n.y + n.handleIn.y };
-      const hOutAbs = { x: n.x + n.handleOut.x, y: n.y + n.handleOut.y };
-
-      // Handle lines
-      ctx.beginPath();
-      ctx.moveTo(hInAbs.x, hInAbs.y);
-      ctx.lineTo(n.x, n.y);
-      ctx.lineTo(hOutAbs.x, hOutAbs.y);
-      ctx.strokeStyle = isSelected ? selectedColor : handleColor;
-      ctx.lineWidth = 1 / zoom.value;
-      ctx.setLineDash([4 / zoom.value, 3 / zoom.value]);
-      ctx.stroke();
-      ctx.setLineDash([]);
-
-      // Handle dots
-      for (const hp of [hInAbs, hOutAbs]) {
-        ctx.beginPath();
-        ctx.arc(hp.x, hp.y, HANDLE_RADIUS / zoom.value, 0, Math.PI * 2);
-        ctx.fillStyle = isSelected ? selectedColor : handleColor;
-        ctx.fill();
-        ctx.strokeStyle = "rgba(0,0,0,0.3)";
-        ctx.lineWidth = 0.5 / zoom.value;
-        ctx.stroke();
-      }
-
-      // Node dot
-      ctx.beginPath();
-      ctx.arc(n.x, n.y, NODE_RADIUS / zoom.value, 0, Math.PI * 2);
-      ctx.fillStyle = isSelected ? selectedColor : isHovered ? "#a5b4fc" : p.color;
-      ctx.fill();
-      ctx.strokeStyle = "rgba(0,0,0,0.4)";
-      ctx.lineWidth = 1 / zoom.value;
-      ctx.stroke();
-    }
-    } // showSpines
-  }
-
-  ctx.restore();
-
-  // Box select overlay
+  // Box select overlay (editor-only, drawn after renderPaths)
   if (dragTarget && dragTarget.kind === "boxSelect") {
+    const ctx2 = c.getContext("2d")!;
+    const dpr = window.devicePixelRatio || 1;
+    ctx2.setTransform(dpr, 0, 0, dpr, 0, 0);
     const bx = dragTarget.startX;
     const by = dragTarget.startY;
     const bw = dragTarget.curX - bx;
     const bh = dragTarget.curY - by;
-    ctx.fillStyle = `rgba(${cssProp("--accent", "99 102 241")} / 0.08)`;
-    ctx.fillRect(bx, by, bw, bh);
-    ctx.strokeStyle = `rgba(${cssProp("--accent", "99 102 241")} / 0.4)`;
-    ctx.lineWidth = 1;
-    ctx.setLineDash([4, 3]);
-    ctx.strokeRect(bx, by, bw, bh);
-    ctx.setLineDash([]);
+    ctx2.fillStyle = `rgba(${cssProp("--accent", "99 102 241")} / 0.08)`;
+    ctx2.fillRect(bx, by, bw, bh);
+    ctx2.strokeStyle = `rgba(${cssProp("--accent", "99 102 241")} / 0.4)`;
+    ctx2.lineWidth = 1;
+    ctx2.setLineDash([4, 3]);
+    ctx2.strokeRect(bx, by, bw, bh);
+    ctx2.setLineDash([]);
   }
-}
-
-function drawGrid(w: number, h: number) {
-  if (!ctx) return;
-  const gridSize = 50;
-  const z = zoom.value;
-  const ox = panX.value;
-  const oy = panY.value;
-
-  ctx.strokeStyle = `rgba(${cssProp("--text-muted", "120 120 150")} / 0.08)`;
-  ctx.lineWidth = 0.5 / z;
-
-  const wStart = -ox / z;
-  const hStart = -oy / z;
-  const wEnd = (w - ox) / z;
-  const hEnd = (h - oy) / z;
-
-  const xMin = Math.floor(wStart / gridSize) * gridSize;
-  const xMax = Math.ceil(wEnd / gridSize) * gridSize;
-  const yMin = Math.floor(hStart / gridSize) * gridSize;
-  const yMax = Math.ceil(hEnd / gridSize) * gridSize;
-
-  ctx.beginPath();
-  for (let x = xMin; x <= xMax; x += gridSize) { ctx.moveTo(x, yMin); ctx.lineTo(x, yMax); }
-  for (let y = yMin; y <= yMax; y += gridSize) { ctx.moveTo(xMin, y); ctx.lineTo(xMax, y); }
-  ctx.stroke();
 }
 
 // ── Cursor ───────────────────────────────────────────────────────────────────
@@ -610,14 +447,6 @@ function onKeydown(e: KeyboardEvent) {
 // ── Canvas setup ─────────────────────────────────────────────────────────────
 
 function fitCanvas() {
-  const c = canvasEl.value;
-  if (!c) return;
-  const dpr = window.devicePixelRatio || 1;
-  const rect = c.getBoundingClientRect();
-  c.width = rect.width * dpr;
-  c.height = rect.height * dpr;
-  ctx = c.getContext("2d")!;
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   draw();
 }
 

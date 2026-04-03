@@ -3,11 +3,12 @@
  * Genetic Evolution page — 3×3 grid of spiral variants.
  * Center = current state, surrounding 8 = mutations.
  * Click a variant to make it the new center + regenerate mutations.
+ * All panels share synchronized pan/zoom navigation.
  */
 import type { ProjectData } from "~/composables/useBezierStore";
-import { sampleBezierPath, generateSpiralPoints } from "~/utils/spiral";
-import type { BezierSpiralConfig, PropCurve, PropNode } from "~/utils/spiral";
-import type { BezierNode, Vec2 } from "~/composables/useBezierStore";
+import { renderPaths } from "~/composables/useCanvasRenderer";
+import type { CanvasView, RenderablePath } from "~/composables/useCanvasRenderer";
+import type { BezierSpiralConfig, PropCurve } from "~/utils/spiral";
 
 // ── State ────────────────────────────────────────────────────────────────────
 
@@ -16,23 +17,72 @@ const center = ref<ProjectData | null>(null);
 const variants = ref<(ProjectData | null)[]>(new Array(9).fill(null));
 const generation = ref(0);
 
+// ── Shared navigation (synchronized across all 9 panels) ────────────────────
+
+const panX = ref(0);
+const panY = ref(0);
+const zoom = ref(1);
+let isPanning = false;
+let panStartMouse = { x: 0, y: 0 };
+let panStartOffset = { x: 0, y: 0 };
+
 // ── Mutation strength ────────────────────────────────────────────────────────
 
-const mutationStrength = ref(0.3); // 0..1 slider
+const mutationStrength = ref(0.3);
 
-// ── Init: load from editor if available ──────────────────────────────────────
+// ── Init ─────────────────────────────────────────────────────────────────────
 
 onMounted(() => {
   if (store.paths.length > 0 && store.paths.some(p => p.nodes.length >= 2)) {
     center.value = store.exportProject();
     regenerate();
+    nextTick(() => fitView());
   }
+  window.addEventListener("mousemove", onMouseMove);
+  window.addEventListener("mouseup", onMouseUp);
 });
 
-// ── Deep clone helper ────────────────────────────────────────────────────────
+onUnmounted(() => {
+  window.removeEventListener("mousemove", onMouseMove);
+  window.removeEventListener("mouseup", onMouseUp);
+});
+
+// ── Deep clone ───────────────────────────────────────────────────────────────
 
 function deepClone<T>(obj: T): T {
   return JSON.parse(JSON.stringify(obj));
+}
+
+// ── Auto-fit view to bounding box ────────────────────────────────────────────
+
+function fitView() {
+  const proj = center.value;
+  if (!proj) return;
+
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const p of proj.paths) {
+    for (const n of p.nodes) {
+      minX = Math.min(minX, n.x); minY = Math.min(minY, n.y);
+      maxX = Math.max(maxX, n.x); maxY = Math.max(maxY, n.y);
+    }
+  }
+  if (!isFinite(minX)) return;
+
+  // Use first canvas cell to measure available size
+  const c = canvasRefs.value[0];
+  if (!c) return;
+  const rect = c.getBoundingClientRect();
+
+  const pad = 60;
+  const bw = maxX - minX || 1;
+  const bh = maxY - minY || 1;
+  const newZoom = Math.min((rect.width - pad) / bw, (rect.height - pad) / bh);
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
+  zoom.value = newZoom;
+  panX.value = rect.width / 2 - cx * newZoom;
+  panY.value = rect.height / 2 - cy * newZoom;
+  renderAll();
 }
 
 // ── Mutation logic ───────────────────────────────────────────────────────────
@@ -44,26 +94,19 @@ function mutateProject(source: ProjectData): ProjectData {
   const strength = mutationStrength.value;
 
   for (const path of proj.paths) {
-    // Mutate spine nodes (positions + handles)
     mutateSpine(path.nodes, strength);
-
-    // Pick 2 random property curves to mutate
     const keys = [...PROP_KEYS];
     shuffle(keys);
-    const toMutate = keys.slice(0, 2);
-    for (const key of toMutate) {
+    for (const key of keys.slice(0, 2)) {
       mutatePropCurve(path.spiral[key], strength);
     }
   }
-
   return proj;
 }
 
 function mutateSpine(nodes: ProjectData["paths"][0]["nodes"], strength: number) {
-  if (nodes.length === 0) return;
-  const scale = strength * 30; // max px displacement
+  const scale = strength * 30;
   const handleScale = strength * 15;
-
   for (const n of nodes) {
     n.x += randRange(-scale, scale);
     n.y += randRange(-scale, scale);
@@ -81,9 +124,7 @@ function mutatePropCurve(
   const range = curve.max - curve.min;
   const scale = strength * range * 0.25;
   const handleScale = strength * 0.08;
-
   for (const n of curve.nodes) {
-    // Don't move t for first/last nodes
     if (n.t > 0.01 && n.t < 0.99) {
       n.t = clamp(n.t + randRange(-0.05 * strength, 0.05 * strength), 0.01, 0.99);
     }
@@ -98,11 +139,9 @@ function mutatePropCurve(
 function randRange(min: number, max: number): number {
   return min + Math.random() * (max - min);
 }
-
 function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));
 }
-
 function shuffle<T>(arr: T[]): void {
   for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -116,18 +155,12 @@ function regenerate() {
   if (!center.value) return;
   const newVariants: (ProjectData | null)[] = [];
   for (let i = 0; i < 9; i++) {
-    if (i === 4) {
-      // Center cell = current state
-      newVariants.push(deepClone(center.value));
-    } else {
-      newVariants.push(mutateProject(center.value));
-    }
+    newVariants.push(i === 4 ? deepClone(center.value) : mutateProject(center.value));
   }
   variants.value = newVariants;
   generation.value++;
+  nextTick(() => renderAll());
 }
-
-// ── Select a variant ─────────────────────────────────────────────────────────
 
 function selectVariant(idx: number) {
   const v = variants.value[idx];
@@ -135,8 +168,6 @@ function selectVariant(idx: number) {
   center.value = deepClone(v);
   regenerate();
 }
-
-// ── Apply to editor ──────────────────────────────────────────────────────────
 
 function applyToEditor() {
   if (!center.value) return;
@@ -148,14 +179,12 @@ function applyToEditor() {
 
 function saveState() {
   if (!center.value) return;
-  const json = JSON.stringify(center.value, null, 2);
-  const blob = new Blob([json], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
+  const blob = new Blob([JSON.stringify(center.value, null, 2)], { type: "application/json" });
   const a = document.createElement("a");
-  a.href = url;
+  a.href = URL.createObjectURL(blob);
   a.download = `evolve-gen${generation.value}.json`;
   a.click();
-  URL.revokeObjectURL(url);
+  URL.revokeObjectURL(a.href);
 }
 
 function loadState() {
@@ -165,11 +194,11 @@ function loadState() {
   input.onchange = async () => {
     const file = input.files?.[0];
     if (!file) return;
-    const text = await file.text();
     try {
-      const data = JSON.parse(text) as ProjectData;
+      const data = JSON.parse(await file.text()) as ProjectData;
       center.value = data;
       regenerate();
+      nextTick(() => fitView());
     } catch { /* ignore */ }
   };
   input.click();
@@ -179,10 +208,11 @@ function loadFromEditor() {
   if (store.paths.length > 0 && store.paths.some(p => p.nodes.length >= 2)) {
     center.value = store.exportProject();
     regenerate();
+    nextTick(() => fitView());
   }
 }
 
-// ── Mini canvas rendering ────────────────────────────────────────────────────
+// ── Canvas refs + rendering ──────────────────────────────────────────────────
 
 const canvasRefs = ref<(HTMLCanvasElement | null)[]>([]);
 
@@ -190,155 +220,101 @@ function setCanvasRef(el: any, idx: number) {
   canvasRefs.value[idx] = el as HTMLCanvasElement;
 }
 
-watch(variants, () => {
-  nextTick(() => renderAll());
-}, { deep: true });
-
-function renderAll() {
-  for (let i = 0; i < 9; i++) {
-    renderCell(i);
-  }
-}
-
-function renderCell(idx: number) {
-  const c = canvasRefs.value[idx];
-  const proj = variants.value[idx];
-  if (!c || !proj) return;
-
-  const dpr = window.devicePixelRatio || 1;
-  const rect = c.getBoundingClientRect();
-  c.width = rect.width * dpr;
-  c.height = rect.height * dpr;
-  const ctx = c.getContext("2d")!;
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, rect.width, rect.height);
-
-  // Find bounding box of all path nodes
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const p of proj.paths) {
-    for (const n of p.nodes) {
-      minX = Math.min(minX, n.x);
-      minY = Math.min(minY, n.y);
-      maxX = Math.max(maxX, n.x);
-      maxY = Math.max(maxY, n.y);
-    }
-  }
-
-  if (!isFinite(minX)) return;
-
-  // Add padding
-  const pad = 40;
-  const bw = maxX - minX || 1;
-  const bh = maxY - minY || 1;
-  const scale = Math.min((rect.width - pad * 2) / bw, (rect.height - pad * 2) / bh);
-  const offX = (rect.width - bw * scale) / 2 - minX * scale;
-  const offY = (rect.height - bh * scale) / 2 - minY * scale;
-
-  ctx.save();
-  ctx.translate(offX, offY);
-  ctx.scale(scale, scale);
-
-  for (const p of proj.paths) {
-    if (p.nodes.length < 2) continue;
-
-    // Draw spine
-    ctx.beginPath();
-    const nodes = p.nodes;
-    ctx.moveTo(nodes[0]!.x, nodes[0]!.y);
-    for (let i = 0; i < nodes.length - 1; i++) {
-      const a = nodes[i]!;
-      const b = nodes[i + 1]!;
-      ctx.bezierCurveTo(
-        a.x + a.handleOut.x, a.y + a.handleOut.y,
-        b.x + b.handleIn.x, b.y + b.handleIn.y,
-        b.x, b.y,
-      );
-    }
-    ctx.strokeStyle = p.color + "40";
-    ctx.lineWidth = 2 / scale;
-    ctx.stroke();
-
-    // Draw spiral
-    if (p.spiral.enabled) {
-      const spiralConfig = reconstructSpiralConfig(p.spiral);
-      const bezNodes = p.nodes.map(n => ({
-        id: n.id, x: n.x, y: n.y,
-        handleIn: { ...n.handleIn },
-        handleOut: { ...n.handleOut },
-      }));
-      const pathLen = estimateLen(bezNodes);
-      const maxFreq = Math.max(...spiralConfig.frequency.nodes.map(n => n.value), 1);
-      const maxSpeed = Math.max(...spiralConfig.speed.nodes.map(n => n.value), 1);
-      const numSamples = Math.max(400, Math.min(8000, Math.round(pathLen * maxFreq * maxSpeed * 0.3)));
-      const samples = sampleBezierPath(bezNodes, p.closed ?? false, numSamples);
-      const pts = generateSpiralPoints(samples, spiralConfig);
-      if (pts.length >= 2) {
-        ctx.beginPath();
-        ctx.moveTo(pts[0]!.x, pts[0]!.y);
-        for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i]!.x, pts[i]!.y);
-        const alpha = idx === 4 ? "d9" : "aa";
-        ctx.strokeStyle = p.color + alpha;
-        ctx.lineWidth = 1 / scale;
-        ctx.stroke();
-      }
-    }
-  }
-
-  ctx.restore();
-
-  // Center cell highlight
-  if (idx === 4) {
-    ctx.strokeStyle = "rgba(99, 102, 241, 0.5)";
-    ctx.lineWidth = 2;
-    ctx.strokeRect(1, 1, rect.width - 2, rect.height - 2);
-  }
-}
-
-/** Reconstruct a full BezierSpiralConfig from serialized project data */
+/** Convert serialized project spiral to full BezierSpiralConfig */
 function reconstructSpiralConfig(s: ProjectData["paths"][0]["spiral"]): BezierSpiralConfig {
-  const defaults = {
+  const defs = {
     radius: { label: "Radius", color: "#6366f1", unit: "px" },
     elliptic: { label: "Elliptic", color: "#f59e0b", unit: "×" },
     orientation: { label: "Orient", color: "#10b981", unit: "°" },
     frequency: { label: "Freq", color: "#ec4899", unit: "×" },
     speed: { label: "Speed", color: "#06b6d4", unit: "×" },
   };
-
-  function toCurve(key: keyof typeof defaults): PropCurve {
-    const src = s[key];
-    const d = defaults[key];
-    return {
-      label: d.label,
-      color: d.color,
-      unit: d.unit,
-      min: src.min,
-      max: src.max,
-      nodes: src.nodes.map(n => ({
-        id: n.id, t: n.t, value: n.value,
-        handleIn: { ...n.handleIn }, handleOut: { ...n.handleOut },
-      })),
+  function toCurve(key: keyof typeof defs): PropCurve {
+    const src = s[key]; const d = defs[key];
+    return { label: d.label, color: d.color, unit: d.unit, min: src.min, max: src.max,
+      nodes: src.nodes.map(n => ({ id: n.id, t: n.t, value: n.value, handleIn: { ...n.handleIn }, handleOut: { ...n.handleOut } })),
     };
   }
-
-  return {
-    enabled: s.enabled,
-    radius: toCurve("radius"),
-    elliptic: toCurve("elliptic"),
-    orientation: toCurve("orientation"),
-    frequency: toCurve("frequency"),
-    speed: toCurve("speed"),
-  };
+  return { enabled: s.enabled, radius: toCurve("radius"), elliptic: toCurve("elliptic"),
+    orientation: toCurve("orientation"), frequency: toCurve("frequency"), speed: toCurve("speed") };
 }
 
-function estimateLen(nodes: { x: number; y: number; handleIn: Vec2; handleOut: Vec2 }[]): number {
-  let len = 0;
-  for (let i = 0; i < nodes.length - 1; i++) {
-    const a = nodes[i]!, b = nodes[i + 1]!;
-    const dx = b.x - a.x, dy = b.y - a.y;
-    len += Math.sqrt(dx * dx + dy * dy);
+function projectToRenderPaths(proj: ProjectData): RenderablePath[] {
+  return proj.paths.map(p => ({
+    nodes: p.nodes.map(n => ({ x: n.x, y: n.y, handleIn: { ...n.handleIn }, handleOut: { ...n.handleOut } })),
+    closed: p.closed,
+    color: p.color,
+    visible: p.visible ?? true,
+    spiral: reconstructSpiralConfig(p.spiral),
+  }));
+}
+
+function renderAll() {
+  const view: CanvasView = { panX: panX.value, panY: panY.value, zoom: zoom.value };
+  for (let i = 0; i < 9; i++) {
+    const c = canvasRefs.value[i];
+    const proj = variants.value[i];
+    if (!c || !proj) continue;
+    const rpaths = projectToRenderPaths(proj);
+    renderPaths(c, rpaths, proj.activePathIndex, view, {
+      showSpines: false,
+      blendMode: proj.settings?.blendMode ?? "source-over",
+    });
   }
-  return len;
 }
+
+// ── Synchronized navigation ──────────────────────────────────────────────────
+
+function onWheel(e: WheelEvent) {
+  if (e.ctrlKey || e.metaKey) {
+    e.preventDefault();
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+    const newZoom = Math.max(0.05, Math.min(20, zoom.value * factor));
+    panX.value = mx - (mx - panX.value) * (newZoom / zoom.value);
+    panY.value = my - (my - panY.value) * (newZoom / zoom.value);
+    zoom.value = newZoom;
+  } else {
+    panX.value -= e.deltaX;
+    panY.value -= e.deltaY;
+  }
+  renderAll();
+}
+
+function onMouseDown(e: MouseEvent) {
+  if (e.button === 1 || (e.button === 0 && e.altKey)) {
+    e.preventDefault();
+    isPanning = true;
+    panStartMouse = { x: e.clientX, y: e.clientY };
+    panStartOffset = { x: panX.value, y: panY.value };
+  }
+}
+
+function onMouseMove(e: MouseEvent) {
+  if (!isPanning) return;
+  panX.value = panStartOffset.x + (e.clientX - panStartMouse.x);
+  panY.value = panStartOffset.y + (e.clientY - panStartMouse.y);
+  renderAll();
+}
+
+function onMouseUp() {
+  isPanning = false;
+}
+
+// Re-render on resize
+let resizeObs: ResizeObserver | null = null;
+onMounted(() => {
+  nextTick(() => {
+    const el = document.querySelector(".evo-grid");
+    if (el) {
+      resizeObs = new ResizeObserver(() => renderAll());
+      resizeObs.observe(el);
+    }
+  });
+});
+onUnmounted(() => resizeObs?.disconnect());
 </script>
 
 <template>
@@ -354,10 +330,7 @@ function estimateLen(nodes: { x: number; y: number; handleIn: Vec2; handleOut: V
         <label class="text-[10px] text-muted uppercase">Mutation</label>
         <input
           v-model.number="mutationStrength"
-          type="range"
-          min="0.05"
-          max="1"
-          step="0.05"
+          type="range" min="0.05" max="1" step="0.05"
           class="w-20 h-1 accent-accent cursor-pointer"
         />
         <span class="text-[10px] text-muted w-6">{{ Math.round(mutationStrength * 100) }}%</span>
@@ -381,6 +354,9 @@ function estimateLen(nodes: { x: number; y: number; handleIn: Vec2; handleOut: V
         <button class="evo-btn" :disabled="!center" @click="regenerate">
           <i class="i-mdi-refresh" /> Regenerate
         </button>
+        <button class="evo-btn" @click="fitView">
+          <i class="i-mdi-fit-to-screen-outline" /> Fit
+        </button>
       </div>
     </div>
 
@@ -394,7 +370,12 @@ function estimateLen(nodes: { x: number; y: number; handleIn: Vec2; handleOut: V
         </div>
       </div>
 
-      <div v-else class="grid grid-cols-3 grid-rows-3 gap-1.5 h-full">
+      <div
+        v-else
+        class="evo-grid grid grid-cols-3 grid-rows-3 gap-1.5 h-full"
+        @wheel="onWheel"
+        @mousedown="onMouseDown"
+      >
         <div
           v-for="(v, idx) in variants"
           :key="idx"
@@ -437,7 +418,6 @@ function estimateLen(nodes: { x: number; y: number; handleIn: Vec2; handleOut: V
   opacity: 0.4;
   pointer-events: none;
 }
-
 .evo-cell {
   position: relative;
   background: rgba(0, 0, 0, 0.15);
