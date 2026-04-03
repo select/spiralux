@@ -251,7 +251,6 @@ function snapSpiral(s: BezierSpiralConfig): SpiralSnap {
     elliptic: snapPropCurve(s.elliptic),
     orientation: snapPropCurve(s.orientation),
     frequency: snapPropCurve(s.frequency),
-
   };
 }
 
@@ -291,7 +290,6 @@ function applySnapshot(snap: Snapshot) {
     restorePropCurve(sp.elliptic, ps.spiral.elliptic);
     restorePropCurve(sp.orientation, ps.spiral.orientation);
     restorePropCurve(sp.frequency, ps.spiral.frequency);
-
     const p: BezierPath = reactive({
       id: ps.id,
       name: ps.name,
@@ -716,6 +714,7 @@ function importProject(data: ProjectData) {
     sp.enabled = ps.spiral.enabled;
     for (const key of ["radius", "elliptic", "orientation", "frequency"] as const) {
       const src = ps.spiral[key];
+      if (!src) continue;
       sp[key].nodes.splice(0, sp[key].nodes.length,
         ...src.nodes.map(n => ({ id: n.id, t: n.t, value: n.value, handleIn: { ...n.handleIn }, handleOut: { ...n.handleOut } })),
       );
@@ -758,6 +757,7 @@ function importProject(data: ProjectData) {
       if (num >= _nextId) _nextId = num + 1;
     }
     for (const key of ["radius", "elliptic", "orientation", "frequency"] as const) {
+      if (!ps.spiral[key]) continue;
       for (const pn of ps.spiral[key].nodes) bumpPropId(pn.id);
     }
   }

@@ -233,80 +233,60 @@ export function generateSpiralPoints(
 ): Vec2[] {
   if (samples.length < 2 || !config.enabled) return [];
 
-  // ── Pre-compute per-sample curvature (smoothed) ──
-  // We need smoothed backbone curvature to reduce coil density on tight curves.
-  const N = samples.length;
-  const rawCurvature = new Float64Array(N);
-  const ds = new Float64Array(N);  // arc-length step to previous sample
-
-  for (let i = 1; i < N; i++) {
-    const prev = samples[i - 1]!, s = samples[i]!;
-    const dx = s.x - prev.x, dy = s.y - prev.y;
-    ds[i] = Math.sqrt(dx * dx + dy * dy);
-    const cross = prev.tx * s.ty - prev.ty * s.tx;
-    rawCurvature[i] = ds[i]! > 0.001 ? cross / ds[i]! : 0;
-  }
-  rawCurvature[0] = rawCurvature[1] ?? 0;
-
-  // Smooth curvature over a window (~1 full coil width)
-  // Use a running average with window proportional to coil size
-  const smoothK = new Float64Array(N);
-  const WINDOW = Math.max(5, Math.round(N * 0.02)); // ~2% of total samples
-  let sum = 0;
-  for (let i = 0; i < Math.min(WINDOW, N); i++) sum += rawCurvature[i]!;
-  for (let i = 0; i < N; i++) {
-    const lo = i - Math.floor(WINDOW / 2);
-    const hi = lo + WINDOW;
-    if (hi <= N && lo >= 0) {
-      smoothK[i] = sum / WINDOW;
-      sum -= rawCurvature[lo]!;
-      if (hi < N) sum += rawCurvature[hi]!;
-    } else {
-      // Edge: compute directly
-      const start = Math.max(0, lo), end = Math.min(N, hi);
-      let s2 = 0;
-      for (let j = start; j < end; j++) s2 += rawCurvature[j]!;
-      smoothK[i] = s2 / (end - start);
-    }
-  }
-
-  // ── Generate spiral points ──
   const points: Vec2[] = [];
   let cumulativeAngle = 0;
+  let prevNormalOffset = 0; // track offset from backbone for curvature compensation
 
-  for (let i = 0; i < N; i++) {
+  for (let i = 0; i < samples.length; i++) {
     const s = samples[i]!;
     const t = s.t;
 
+    // Evaluate property curves at this position
     const radius = evaluatePropCurve(config.radius, t);
     const elliptic = evaluatePropCurve(config.elliptic, t);
     const orientDeg = evaluatePropCurve(config.orientation, t);
     const freq = evaluatePropCurve(config.frequency, t);
 
+    // Advance angle based on frequency, speed, and curvature compensation
     if (i > 0) {
-      // Curvature compensation: on tight curves coils bunch on the
-      // inside.  Reduce angular rate proportionally to |κ| × radius
-      // so coil-to-coil spacing stays visually uniform.
-      //   κr = 0   → compensation = 1    (straight, no change)
-      //   κr = 0.5 → compensation ≈ 0.57 (43% fewer coils)
-      //   κr = 1   → compensation = 0.4  (60% fewer coils)
-      const absK = Math.abs(smoothK[i]!);
-      const compensation = 1 / (1 + absK * radius * 1.5);
-      cumulativeAngle += freq * ds[i]! * 0.05 * compensation;
+      const prev = samples[i - 1]!;
+      const ds = Math.sqrt(
+        (s.x - prev.x) ** 2 + (s.y - prev.y) ** 2,
+      );
+
+      // Compute backbone curvature from tangent change
+      // Cross product of consecutive tangents gives sin(dθ) ≈ dθ for small angles
+      const cross = prev.tx * s.ty - prev.ty * s.tx;
+      const curvature = ds > 0.001 ? cross / ds : 0;
+
+      // On a curved backbone, the offset curve at distance d from the backbone
+      // has arc length ds × (1 + κ·d). Use the previous normal offset to
+      // compute the effective arc length at the spiral point's actual position.
+      // This keeps coil density visually uniform regardless of radius + curvature.
+      const stretch = Math.max(1 + curvature * prevNormalOffset, 0.05);
+      cumulativeAngle += freq * ds * 0.05 * stretch;
     }
 
     const orientRad = (orientDeg * Math.PI) / 180;
+
+    // Local offset in tangent/normal frame
     const cosA = Math.cos(cumulativeAngle);
     const sinA = Math.sin(cumulativeAngle);
 
+    // Elliptic spiral: radius along tangent, radius*elliptic along normal
     let localT = radius * cosA;
     let localN = radius * elliptic * sinA;
 
+    // Rotate by orientation
     const cosO = Math.cos(orientRad);
     const sinO = Math.sin(orientRad);
     const rotT = localT * cosO - localN * sinO;
     const rotN = localT * sinO + localN * cosO;
 
+    // Track normal offset for next iteration's curvature compensation
+    prevNormalOffset = rotT;
+
+    // Transform to world space
     points.push({
       x: s.x + rotT * s.nx + rotN * s.tx,
       y: s.y + rotT * s.ny + rotN * s.ty,
