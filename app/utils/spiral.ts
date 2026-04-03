@@ -284,11 +284,14 @@ export function generateSpiralPoints(
     const freq = evaluatePropCurve(config.frequency, t);
 
     if (i > 0) {
-      // Curvature compensation: on tight curves the coils physically
-      // overlap on the inside, so we reduce the angular rate proportionally
-      // to |κ| × radius.  This keeps coil-to-coil spacing visually uniform.
+      // Curvature compensation: on tight curves coils bunch on the
+      // inside.  Reduce angular rate proportionally to |κ| × radius
+      // so coil-to-coil spacing stays visually uniform.
+      //   κr = 0   → compensation = 1    (straight, no change)
+      //   κr = 0.5 → compensation ≈ 0.57 (43% fewer coils)
+      //   κr = 1   → compensation = 0.4  (60% fewer coils)
       const absK = Math.abs(smoothK[i]!);
-      const compensation = 1 / Math.max(1, absK * radius * 0.5);
+      const compensation = 1 / (1 + absK * radius * 1.5);
       cumulativeAngle += freq * ds[i]! * 0.05 * compensation;
     }
 
