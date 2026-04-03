@@ -40,7 +40,7 @@ function isVertical(pos: DockPosition) {
     <!-- ── Top edge ──────────────────────────────────────────── -->
     <div
       v-if="hasTop"
-      class="shrink-0 flex items-start gap-2 bg-surface/50 backdrop-blur p-1.5"
+      class="shrink-0 flex items-start gap-2 bg-surface/50 backdrop-blur p-1.5 z-10 relative"
       :class="borderClasses('top')"
     >
       <!-- Toolbar on top -->
@@ -62,7 +62,7 @@ function isVertical(pos: DockPosition) {
       <!-- Left edge -->
       <div
         v-if="hasLeft"
-        class="shrink-0 flex flex-col gap-2 bg-surface/50 backdrop-blur p-1.5 overflow-y-auto"
+        class="shrink-0 flex flex-col gap-2 bg-surface/50 backdrop-blur p-1.5 overflow-y-auto z-10 relative"
         :class="borderClasses('left')"
       >
         <div v-if="toolbarDock === 'left'" class="flex items-start gap-1">
@@ -87,7 +87,7 @@ function isVertical(pos: DockPosition) {
       <!-- Right edge -->
       <div
         v-if="hasRight"
-        class="shrink-0 flex flex-col gap-2 bg-surface/50 backdrop-blur p-1.5 overflow-y-auto"
+        class="shrink-0 flex flex-col gap-2 bg-surface/50 backdrop-blur p-1.5 overflow-y-auto z-10 relative"
         :class="borderClasses('right')"
       >
         <div v-if="toolbarDock === 'right'" class="flex items-start gap-1">
@@ -106,7 +106,7 @@ function isVertical(pos: DockPosition) {
     <!-- ── Bottom edge ───────────────────────────────────────── -->
     <div
       v-if="hasBottom"
-      class="shrink-0 flex items-start gap-2 bg-surface/50 backdrop-blur p-1.5"
+      class="shrink-0 flex items-start gap-2 bg-surface/50 backdrop-blur p-1.5 z-10 relative"
       :class="borderClasses('bottom')"
     >
       <!-- Toolbar on bottom -->

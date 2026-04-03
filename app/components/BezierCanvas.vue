@@ -556,12 +556,20 @@ function onDblClick(e: MouseEvent) {
 }
 
 function onWheel(e: WheelEvent) {
-  const screenPos = getCanvasPos(e);
-  const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
-  const newZoom = Math.max(0.1, Math.min(10, zoom.value * factor));
-  panX.value = screenPos.x - (screenPos.x - panX.value) * (newZoom / zoom.value);
-  panY.value = screenPos.y - (screenPos.y - panY.value) * (newZoom / zoom.value);
-  zoom.value = newZoom;
+  if (e.ctrlKey || e.metaKey) {
+    // Ctrl+scroll = zoom (pinch-to-zoom on trackpads)
+    e.preventDefault();
+    const screenPos = getCanvasPos(e);
+    const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+    const newZoom = Math.max(0.1, Math.min(10, zoom.value * factor));
+    panX.value = screenPos.x - (screenPos.x - panX.value) * (newZoom / zoom.value);
+    panY.value = screenPos.y - (screenPos.y - panY.value) * (newZoom / zoom.value);
+    zoom.value = newZoom;
+  } else {
+    // Scroll = pan canvas
+    panX.value -= e.deltaX;
+    panY.value -= e.deltaY;
+  }
   draw();
 }
 
@@ -654,7 +662,7 @@ onUnmounted(() => {
     @mousemove="onPointerMove"
     @mouseup="onPointerUp"
     @dblclick="onDblClick"
-    @wheel.prevent="onWheel"
+    @wheel="onWheel"
     @contextmenu.prevent
   />
 </template>

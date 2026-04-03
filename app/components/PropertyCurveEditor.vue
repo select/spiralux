@@ -835,7 +835,7 @@ const hasSelectedNode = computed(() => selectedNodeIdx.value >= 0 && selectedNod
 .node-tool::after {
   content: attr(data-tip);
   position: absolute;
-  bottom: calc(100% + 4px);
+  top: calc(100% + 4px);
   left: 50%;
   transform: translateX(-50%);
   white-space: nowrap;

@@ -93,7 +93,7 @@ function onDragEnd() {
 </script>
 
 <template>
-  <div class="inline-flex gap-1.5 items-start" :class="isVertical ? 'flex-col' : 'flex-row flex-wrap'">
+  <div class="inline-flex gap-1.5 items-start" :class="[isVertical ? 'flex-col' : 'flex-row flex-wrap', toolbarDock === 'top' && 'dock-top']">
 
     <!-- ── Row 0: Path list / switcher ──────────────────────────── -->
     <div class="toolbar-row gap-1">
@@ -368,7 +368,6 @@ function onDragEnd() {
 .tb::after {
   content: attr(data-tip);
   position: absolute;
-  bottom: calc(100% + 6px);
   left: 50%;
   transform: translateX(-50%);
   white-space: nowrap;
@@ -385,6 +384,15 @@ function onDragEnd() {
   opacity: 0;
   transition: opacity 0.1s;
   z-index: 50;
+}
+/* Default: tooltip above */
+.tb::after {
+  bottom: calc(100% + 6px);
+}
+/* When toolbar is docked top: tooltip below */
+.dock-top .tb::after {
+  bottom: auto;
+  top: calc(100% + 6px);
 }
 .tb:hover::after {
   opacity: 1;
