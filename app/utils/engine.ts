@@ -1,5 +1,5 @@
 /**
- * Cycloid Drawing Machine — accurate mechanical simulation.
+ * Spiralux engine — accurate mechanical simulation.
  *
  * Models the real Nolan Gandy machine:
  *   - A motor drives everything via belts
@@ -115,7 +115,7 @@ export function penPosition(config: MachineConfig, theta: number): { x: number; 
  * Negative speed = clockwise rotation (gear meshes externally).
  * Positive speed = counter-clockwise (gear meshes internally or belt).
  *
- * This naturally produces spirograph / Fourier epicycle curves.
+ * This naturally produces spiralux / Fourier epicycle curves.
  * ═══════════════════════════════════════════════════════════════ */
 
 export interface RadiusMod {

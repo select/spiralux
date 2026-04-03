@@ -126,11 +126,11 @@ export function applyTheme(theme: Theme) {
     root.style.setProperty(key, value);
   }
   root.setAttribute("data-theme", theme.id);
-  localStorage.setItem("cycloid-theme", theme.id);
+  localStorage.setItem("spiralux-theme", theme.id);
 }
 
 export function loadSavedTheme(): Theme {
-  const saved = localStorage.getItem("cycloid-theme");
+  const saved = localStorage.getItem("spiralux-theme");
   const theme = THEMES.find((t) => t.id === saved) ?? THEMES[0]!;
   applyTheme(theme);
   return theme;

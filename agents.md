@@ -1,6 +1,6 @@
-# agents.md — Cycloid Drawing Machine Simulator
+# agents.md — Spiralux
 
-Browser-based simulator of the Nolan Gandy Cycloid Drawing Machine + headless SVG renderer for iterative pattern matching.
+Browser-based spiral art generator + headless SVG renderer for iterative pattern matching.
 
 **Stack:** Vue 3, TypeScript, Tailwind CSS v4, Vite
 

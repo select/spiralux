@@ -91,7 +91,7 @@ function exportPNG() {
   const url = r.getCanvasDataURL();
   const a = document.createElement("a");
   a.href = url;
-  a.download = `cycloid-${Date.now()}.png`;
+  a.download = `spiralux-${Date.now()}.png`;
   a.click();
 }
 

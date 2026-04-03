@@ -1,5 +1,5 @@
 /**
- * Canvas renderer — draws the spirograph trace progressively
+ * Canvas renderer — draws the spiral trace progressively
  * with support for dynamic color generation.
  */
 

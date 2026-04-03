@@ -1,6 +1,6 @@
 # Simulation Loop — Replicating a Target Pattern
 
-This guide explains how to use the headless renderer to iteratively match a real cycloid drawing machine output.
+This guide explains how to use the headless renderer to iteratively match a real drawing machine output.
 
 ## Quick Start
 

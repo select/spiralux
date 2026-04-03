@@ -779,7 +779,7 @@ function downloadProject() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `spirograph-${Date.now()}.json`;
+  a.download = `spiralux-${Date.now()}.json`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -910,7 +910,7 @@ function downloadSVG() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `spirograph-${Date.now()}.svg`;
+  a.download = `spiralux-${Date.now()}.svg`;
   a.click();
   URL.revokeObjectURL(url);
 }

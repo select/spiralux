@@ -19,7 +19,7 @@ const { loadedFromExpId } = useStore();
     <!-- Header -->
     <div class="flex items-center justify-between animate-fade-in">
       <h1 class="text-base font-semibold tracking-tight text-primary">
-        🌀 Cycloid Machine
+        🌀 Spiralux
       </h1>
       <ThemeSwitcher />
     </div>

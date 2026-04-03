@@ -1,5 +1,5 @@
 /**
- * render.ts — headless SVG renderer for the cycloid machine.
+ * render.ts — headless SVG renderer for Spiralux.
  *
  * Reads a single ExperimentConfig from scripts/params.ts.
  * Every tuneable knob is in that config — nothing hardcoded here.
