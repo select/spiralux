@@ -85,56 +85,207 @@ function fitView() {
   renderAll();
 }
 
-// ── Mutation logic ───────────────────────────────────────────────────────────
+// ── Mutation rules ───────────────────────────────────────────────────────────
+//
+// Every property in the exported ProjectData has a defined mutation rule.
+// Rules:
+//   1. Orientation: skip if ALL elliptic curve nodes have value ≤ 1.05 (circle)
+//   2. Spine path: add/remove nodes, move positions, move handles
+//   3. Prop curve nodes: move value, move t, move handles, add/remove nodes
+//   4. Every numeric property gets a proportional random offset
 
 const PROP_KEYS = ["radius", "elliptic", "orientation", "frequency", "speed"] as const;
+type SpineNode = ProjectData["paths"][0]["nodes"][0];
+type PropCurveData = ProjectData["paths"][0]["spiral"]["radius"];
 
 function mutateProject(source: ProjectData): ProjectData {
   const proj = deepClone(source);
-  const strength = mutationStrength.value;
+  const s = mutationStrength.value;
 
   for (const path of proj.paths) {
-    mutateSpine(path.nodes, strength);
+    // ── Spine path mutations ──
+    mutateSpine(path, s);
+
+    // ── Property curve mutations (pick 2–3 curves) ──
     const keys = [...PROP_KEYS];
     shuffle(keys);
-    for (const key of keys.slice(0, 2)) {
-      mutatePropCurve(path.spiral[key], strength);
+    const numCurves = coin(0.3) ? 3 : 2;
+    for (const key of keys.slice(0, numCurves)) {
+      // Rule 1: skip orientation when elliptic ≈ 1 (circle → rotation meaningless)
+      if (key === "orientation" && isCircular(path.spiral.elliptic)) continue;
+      mutatePropCurve(path.spiral[key], s);
+    }
+
+    // ── Mutate color slightly ──
+    if (coin(0.15 * s)) {
+      path.color = mutateColor(path.color, s);
     }
   }
+
   return proj;
 }
 
-function mutateSpine(nodes: ProjectData["paths"][0]["nodes"], strength: number) {
-  const scale = strength * 30;
-  const handleScale = strength * 15;
+/** Check if all elliptic nodes are ≤ 1.05 (effectively circular) */
+function isCircular(elliptic: PropCurveData): boolean {
+  return elliptic.nodes.every(n => Math.abs(n.value - 1) < 0.05);
+}
+
+// ── Spine mutations ──────────────────────────────────────────────────────────
+
+function mutateSpine(path: ProjectData["paths"][0], s: number) {
+  const nodes = path.nodes;
+  if (nodes.length === 0) return;
+
+  const posScale = s * 30;      // node position displacement (px)
+  const handleScale = s * 20;   // handle displacement (px)
+
+  // Rule 2a: possibly add a node (interpolate between two existing)
+  if (nodes.length >= 2 && nodes.length < 12 && coin(0.2 * s)) {
+    const idx = Math.floor(Math.random() * (nodes.length - 1));
+    const a = nodes[idx]!;
+    const b = nodes[idx + 1]!;
+    const t = 0.3 + Math.random() * 0.4; // avoid endpoints
+    const mt = 1 - t;
+    // Cubic bezier interpolation at t
+    const ax = a.x + a.handleOut.x, ay = a.y + a.handleOut.y;
+    const bx = b.x + b.handleIn.x, by = b.y + b.handleIn.y;
+    const mx = mt ** 3 * a.x + 3 * mt ** 2 * t * ax + 3 * mt * t ** 2 * bx + t ** 3 * b.x;
+    const my = mt ** 3 * a.y + 3 * mt ** 2 * t * ay + 3 * mt * t ** 2 * by + t ** 3 * b.y;
+    const handleLen = 30 + Math.random() * 20;
+    const newNode: SpineNode = {
+      id: `evo_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      x: mx + randRange(-posScale * 0.3, posScale * 0.3),
+      y: my + randRange(-posScale * 0.3, posScale * 0.3),
+      handleIn: { x: -handleLen + randRange(-10, 10), y: randRange(-10, 10) },
+      handleOut: { x: handleLen + randRange(-10, 10), y: randRange(-10, 10) },
+    };
+    nodes.splice(idx + 1, 0, newNode);
+  }
+
+  // Rule 2b: possibly remove a node (never first/last, need ≥ 3)
+  if (nodes.length > 3 && coin(0.15 * s)) {
+    const idx = 1 + Math.floor(Math.random() * (nodes.length - 2));
+    nodes.splice(idx, 1);
+  }
+
+  // Rule 3: move node positions
   for (const n of nodes) {
-    n.x += randRange(-scale, scale);
-    n.y += randRange(-scale, scale);
-    n.handleIn.x += randRange(-handleScale, handleScale);
-    n.handleIn.y += randRange(-handleScale, handleScale);
-    n.handleOut.x += randRange(-handleScale, handleScale);
-    n.handleOut.y += randRange(-handleScale, handleScale);
+    if (coin(0.8)) {
+      n.x += randRange(-posScale, posScale);
+      n.y += randRange(-posScale, posScale);
+    }
+  }
+
+  // Rule 4: move handle positions
+  for (const n of nodes) {
+    if (coin(0.7)) {
+      n.handleIn.x += randRange(-handleScale, handleScale);
+      n.handleIn.y += randRange(-handleScale, handleScale);
+    }
+    if (coin(0.7)) {
+      n.handleOut.x += randRange(-handleScale, handleScale);
+      n.handleOut.y += randRange(-handleScale, handleScale);
+    }
+  }
+
+  // Rule: possibly toggle closed
+  if (coin(0.05 * s)) {
+    path.closed = !path.closed;
   }
 }
 
-function mutatePropCurve(
-  curve: { nodes: { id: string; t: number; value: number; handleIn: { dt: number; dv: number }; handleOut: { dt: number; dv: number } }[]; min: number; max: number },
-  strength: number,
-) {
+// ── Property curve mutations ─────────────────────────────────────────────────
+
+function mutatePropCurve(curve: PropCurveData, s: number) {
   const range = curve.max - curve.min;
-  const scale = strength * range * 0.25;
-  const handleScale = strength * 0.08;
+  const valueScale = s * range * 0.2;
+  const tScale = s * 0.06;
+  const handleDvScale = s * range * 0.1;
+  const handleDtScale = s * 0.06;
+
+  // Mutate existing nodes
   for (const n of curve.nodes) {
-    if (n.t > 0.01 && n.t < 0.99) {
-      n.t = clamp(n.t + randRange(-0.05 * strength, 0.05 * strength), 0.01, 0.99);
+    // Node value
+    if (coin(0.8)) {
+      n.value = clamp(n.value + randRange(-valueScale, valueScale), curve.min, curve.max);
     }
-    n.value = clamp(n.value + randRange(-scale, scale), curve.min, curve.max);
-    n.handleIn.dv += randRange(-scale * 0.3, scale * 0.3);
-    n.handleOut.dv += randRange(-scale * 0.3, scale * 0.3);
-    n.handleIn.dt += randRange(-handleScale, handleScale);
-    n.handleOut.dt += randRange(-handleScale, handleScale);
+
+    // Node t position (don't move first/last endpoints)
+    if (n.t > 0.01 && n.t < 0.99 && coin(0.5)) {
+      n.t = clamp(n.t + randRange(-tScale, tScale), 0.02, 0.98);
+    }
+
+    // Handle dv (value offset)
+    if (coin(0.6)) {
+      n.handleIn.dv += randRange(-handleDvScale, handleDvScale);
+      n.handleOut.dv += randRange(-handleDvScale, handleDvScale);
+    }
+
+    // Handle dt (time offset)
+    if (coin(0.4)) {
+      n.handleIn.dt += randRange(-handleDtScale, handleDtScale);
+      n.handleOut.dt += randRange(-handleDtScale, handleDtScale);
+    }
+  }
+
+  // Possibly add a node to the curve
+  if (curve.nodes.length < 8 && coin(0.15 * s)) {
+    // Pick a random t that's not too close to existing nodes
+    const t = 0.1 + Math.random() * 0.8;
+    const nearestDist = Math.min(...curve.nodes.map(n => Math.abs(n.t - t)));
+    if (nearestDist > 0.08) {
+      // Interpolate value from neighbors
+      const sorted = [...curve.nodes].sort((a, b) => a.t - b.t);
+      let value = (curve.min + curve.max) / 2;
+      for (let i = 0; i < sorted.length - 1; i++) {
+        if (sorted[i]!.t <= t && sorted[i + 1]!.t >= t) {
+          const frac = (t - sorted[i]!.t) / (sorted[i + 1]!.t - sorted[i]!.t);
+          value = sorted[i]!.value + frac * (sorted[i + 1]!.value - sorted[i]!.value);
+          break;
+        }
+      }
+      value = clamp(value + randRange(-valueScale * 0.5, valueScale * 0.5), curve.min, curve.max);
+      curve.nodes.push({
+        id: `evo_pn_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        t,
+        value,
+        handleIn: { dt: -0.08 + randRange(-0.03, 0.03), dv: randRange(-handleDvScale * 0.3, handleDvScale * 0.3) },
+        handleOut: { dt: 0.08 + randRange(-0.03, 0.03), dv: randRange(-handleDvScale * 0.3, handleDvScale * 0.3) },
+      });
+      curve.nodes.sort((a, b) => a.t - b.t);
+    }
+  }
+
+  // Possibly remove an interior node
+  if (curve.nodes.length > 2 && coin(0.1 * s)) {
+    // Never remove first or last
+    const idx = 1 + Math.floor(Math.random() * (curve.nodes.length - 2));
+    curve.nodes.splice(idx, 1);
+  }
+
+  // Possibly mutate min/max range slightly
+  if (coin(0.08 * s)) {
+    const rangeShift = range * 0.05 * s;
+    curve.min = Math.max(0, curve.min + randRange(-rangeShift, rangeShift));
+    curve.max = curve.max + randRange(-rangeShift, rangeShift);
+    if (curve.max <= curve.min + 0.01) curve.max = curve.min + 0.01;
   }
 }
+
+// ── Color mutation ───────────────────────────────────────────────────────────
+
+function mutateColor(hex: string, s: number): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  const shift = Math.round(s * 30);
+  const nr = clamp(r + randRange(-shift, shift), 0, 255);
+  const ng = clamp(g + randRange(-shift, shift), 0, 255);
+  const nb = clamp(b + randRange(-shift, shift), 0, 255);
+  return `#${Math.round(nr).toString(16).padStart(2, "0")}${Math.round(ng).toString(16).padStart(2, "0")}${Math.round(nb).toString(16).padStart(2, "0")}`;
+}
+
+// ── Utilities ────────────────────────────────────────────────────────────────
 
 function randRange(min: number, max: number): number {
   return min + Math.random() * (max - min);
@@ -147,6 +298,10 @@ function shuffle<T>(arr: T[]): void {
     const j = Math.floor(Math.random() * (i + 1));
     [arr[i], arr[j]] = [arr[j]!, arr[i]!];
   }
+}
+/** Coin flip with given probability of true */
+function coin(probability: number): boolean {
+  return Math.random() < probability;
 }
 
 // ── Regenerate grid ──────────────────────────────────────────────────────────
