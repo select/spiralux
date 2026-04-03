@@ -3,3 +3,7 @@ node_modules/
 .output/
 dist/
 *.local
+
+# Symlinks replaced by copies in CI
+public/output
+public/target
