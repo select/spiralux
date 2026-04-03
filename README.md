@@ -44,13 +44,13 @@ pnpm build
 
 | Key | Action |
 |-----|--------|
-| `P` | Pen tool |
-| `V` | Select tool |
-| `H` | Pan tool |
-| `Delete` | Delete selected node |
+| `H` | Toggle spiral spine visibility |
+| `Delete` / `Backspace` | Delete selected node |
+| `Arrow keys` | Nudge selected node (Shift = 10px) |
 | `Ctrl+Z` | Undo |
-| `Ctrl+Shift+Z` | Redo |
-| `Escape` | Close expanded curve editor |
+| `Ctrl+Shift+Z` / `Ctrl+Y` | Redo |
+| `Ctrl+A` | Select all nodes |
+| `Escape` | Deselect / close expanded curve editor |
 
 ### Curve Editor
 
