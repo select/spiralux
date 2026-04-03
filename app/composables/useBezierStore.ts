@@ -84,8 +84,8 @@ function createPath(name?: string, color?: string): BezierPath {
 
 // ── Layout dock positions ────────────────────────────────────────────────────
 
-const toolbarDock = useStorage<DockPosition>("bezier-toolbar-dock", "top");
-const propsDock = useStorage<DockPosition>("bezier-props-dock", "right");
+const toolbarDock = useStorage<DockPosition>("bezier-toolbar-dock", "bottom");
+const propsDock = useStorage<DockPosition>("bezier-props-dock", "top");
 const showSpines = ref(true);
 
 const BLEND_MODES = [
@@ -748,8 +748,8 @@ function importProject(data: ProjectData) {
   if (data.settings) {
     showSpines.value = data.settings.showSpines ?? true;
     spiralBlendMode.value = data.settings.blendMode ?? "screen";
-    toolbarDock.value = data.settings.toolbarDock ?? "top";
-    propsDock.value = data.settings.propsDock ?? "right";
+    toolbarDock.value = data.settings.toolbarDock ?? "bottom";
+    propsDock.value = data.settings.propsDock ?? "top";
   }
 
   // Bump ID counters past any restored IDs

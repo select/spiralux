@@ -1,4 +1,8 @@
-# agents.md — Spiralux
+# AGENTS.md — Spiralux
+
+## Screenshots
+
+Screenshots are located at `~/Pictures/Screenshots/`
 
 Browser-based spiral art generator + headless SVG renderer for iterative pattern matching.
 

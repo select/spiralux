@@ -190,19 +190,28 @@ export function sampleBezierPath(
   const samples: PathSample[] = [];
   const samplesPerSeg = Math.max(2, Math.ceil(numSamples / segCount));
 
+  // First pass: collect samples with parametric t and compute cumulative arc length
+  const arcLengths: number[] = [];
+  let totalArc = 0;
+
   for (let seg = 0; seg < segCount; seg++) {
     const a = nodes[seg]!;
     const b = nodes[(seg + 1) % nodes.length]!;
-    const steps = seg === segCount - 1 ? samplesPerSeg : samplesPerSeg; // include last
 
-    for (let i = 0; i <= steps; i++) {
+    for (let i = 0; i <= samplesPerSeg; i++) {
       if (seg > 0 && i === 0) continue; // avoid duplicate at segment boundaries
-      const u = i / steps;
+      const u = i / samplesPerSeg;
       const pos = evalCubic(a, b, u);
       const deriv = evalCubicDerivative(a, b, u);
       const len = Math.sqrt(deriv.x * deriv.x + deriv.y * deriv.y) || 1;
       const tx = deriv.x / len;
       const ty = deriv.y / len;
+
+      if (samples.length > 0) {
+        const prev = samples[samples.length - 1]!;
+        totalArc += Math.sqrt((pos.x - prev.x) ** 2 + (pos.y - prev.y) ** 2);
+      }
+      arcLengths.push(totalArc);
 
       samples.push({
         x: pos.x,
@@ -211,9 +220,15 @@ export function sampleBezierPath(
         ty,
         nx: -ty, // left-pointing normal
         ny: tx,
-        t: (seg + u) / segCount,
+        t: 0, // will be set in second pass
       });
     }
+  }
+
+  // Second pass: set t to arc-length parameterized [0, 1]
+  const invTotal = totalArc > 0 ? 1 / totalArc : 0;
+  for (let i = 0; i < samples.length; i++) {
+    samples[i]!.t = arcLengths[i]! * invTotal;
   }
 
   return samples;
@@ -229,6 +244,7 @@ export function generateSpiralPoints(
 
   const points: Vec2[] = [];
   let cumulativeAngle = 0;
+  let prevNormalOffset = 0; // track offset from backbone for curvature compensation
 
   for (let i = 0; i < samples.length; i++) {
     const s = samples[i]!;
@@ -241,12 +257,24 @@ export function generateSpiralPoints(
     const freq = evaluatePropCurve(config.frequency, t);
     const speed = evaluatePropCurve(config.speed, t);
 
-    // Advance angle based on frequency and speed
+    // Advance angle based on frequency, speed, and curvature compensation
     if (i > 0) {
+      const prev = samples[i - 1]!;
       const ds = Math.sqrt(
-        (s.x - samples[i - 1]!.x) ** 2 + (s.y - samples[i - 1]!.y) ** 2,
+        (s.x - prev.x) ** 2 + (s.y - prev.y) ** 2,
       );
-      cumulativeAngle += freq * ds * 0.05 * speed;
+
+      // Compute backbone curvature from tangent change
+      // Cross product of consecutive tangents gives sin(dθ) ≈ dθ for small angles
+      const cross = prev.tx * s.ty - prev.ty * s.tx;
+      const curvature = ds > 0.001 ? cross / ds : 0;
+
+      // On a curved backbone, the offset curve at distance d from the backbone
+      // has arc length ds × (1 + κ·d). Use the previous normal offset to
+      // compute the effective arc length at the spiral point's actual position.
+      // This keeps coil density visually uniform regardless of radius + curvature.
+      const stretch = Math.max(1 + curvature * prevNormalOffset, 0.05);
+      cumulativeAngle += freq * ds * 0.05 * speed * stretch;
     }
 
     const orientRad = (orientDeg * Math.PI) / 180;
@@ -264,6 +292,9 @@ export function generateSpiralPoints(
     const sinO = Math.sin(orientRad);
     const rotT = localT * cosO - localN * sinO;
     const rotN = localT * sinO + localN * cosO;
+
+    // Track normal offset for next iteration's curvature compensation
+    prevNormalOffset = rotT;
 
     // Transform to world space
     points.push({

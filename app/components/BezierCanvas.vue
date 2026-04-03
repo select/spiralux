@@ -3,7 +3,7 @@
  * BezierCanvas — interactive cubic-bezier path editor.
  * Draws ALL paths; only the active path is interactive (handles shown).
  */
-import { ref, onMounted, onUnmounted, watch } from "vue";
+import { ref, onMounted, onUnmounted, watch, nextTick } from "vue";
 import type { BezierNode, BezierPath, Vec2 } from "~/composables/useBezierStore";
 import { sampleBezierPath, generateSpiralPoints } from "~/utils/spiral";
 
@@ -27,6 +27,8 @@ const {
   redo,
   showSpines,
   spiralBlendMode,
+  toolbarDock,
+  propsDock,
 } = useBezierStore();
 
 const canvasEl = ref<HTMLCanvasElement | null>(null);
@@ -617,6 +619,13 @@ watch(activePathIndex, () => draw());
 watch(showSpines, () => draw());
 watch(spiralBlendMode, () => draw());
 
+// Re-fit canvas when dock positions change (layout resize)
+watch([toolbarDock, propsDock], () => {
+  nextTick(() => fitCanvas());
+});
+
+let resizeObs: ResizeObserver | null = null;
+
 onMounted(() => {
   fitCanvas();
   window.addEventListener("resize", fitCanvas);
@@ -624,12 +633,16 @@ onMounted(() => {
   const rect = canvasEl.value!.getBoundingClientRect();
   panX.value = rect.width / 2;
   panY.value = rect.height / 2;
+  // Observe container resize (e.g. props panel expand/collapse)
+  resizeObs = new ResizeObserver(() => fitCanvas());
+  resizeObs.observe(canvasEl.value!.parentElement!);
   draw();
 });
 
 onUnmounted(() => {
   window.removeEventListener("resize", fitCanvas);
   window.removeEventListener("keydown", onKeydown);
+  resizeObs?.disconnect();
 });
 </script>
 
