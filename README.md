@@ -1,6 +1,8 @@
 # Spiralux
 
-A browser-based bezier path editor with spiral pattern generation. Draw bezier curves on a canvas, then generate intricate spiral patterns along those paths with fine-grained control over radius, frequency, speed, elliptic ratio, and orientation.
+A browser-based bezier path editor with spiral pattern generation. Draw bezier curves on a canvas, then generate intricate spiral patterns along those paths with fine-grained control over radius, frequency, elliptic ratio, and orientation.
+
+🔗 **[Live Demo](https://select.github.io/spiralux/)**
 
 ![Nuxt](https://img.shields.io/badge/Nuxt-4.4-00DC82?logo=nuxt.js&logoColor=white)
 ![Vue](https://img.shields.io/badge/Vue-3-4FC08D?logo=vue.js&logoColor=white)
