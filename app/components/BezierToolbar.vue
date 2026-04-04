@@ -42,7 +42,6 @@ const {
   BLEND_MODES,
   downloadProject,
   uploadProject,
-  downloadSVG,
 } = useBezierStore();
 
 // Theme
@@ -285,9 +284,6 @@ function onDragEnd() {
       </button>
       <button class="tb" data-tip="Load project" @click="uploadProject">
         <i class="i-mdi-folder-open text-lg" />
-      </button>
-      <button class="tb" data-tip="Export SVG" @click="downloadSVG">
-        <i class="i-mdi-file-export-outline text-lg" />
       </button>
 
       <div class="divider" />
