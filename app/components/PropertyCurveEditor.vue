@@ -412,8 +412,8 @@ function draw() {
     const ny = valToY(n.value);
     const isSelected = props.expanded && selectedNodeIdx.value === i;
 
-    // Handle lines + dots (expanded only)
-    if (props.expanded) {
+    // Handle lines + dots (expanded, selected node only)
+    if (props.expanded && isSelected) {
       const hOutX = nx + n.handleOut.dt * dtScale;
       const hOutY = ny - n.handleOut.dv * dvScale;
       const hInX = nx + n.handleIn.dt * dtScale;
@@ -695,17 +695,53 @@ watch(() => props.expanded, () => {
   requestAnimationFrame(() => requestAnimationFrame(fitCanvas));
 });
 
+function onKeydown(e: KeyboardEvent) {
+  if (!props.expanded) return;
+  const idx = selectedNodeIdx.value;
+  if (idx < 0 || idx >= props.curve.nodes.length) return;
+  if (!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)) return;
+
+  e.preventDefault();
+  pushUndo();
+
+  const n = props.curve.nodes[idx]!;
+  const range = props.curve.max - props.curve.min || 1;
+  const isFirst = idx === 0;
+  const isLast = idx === props.curve.nodes.length - 1;
+
+  // Step sizes
+  const tStep = (e.shiftKey ? 0.05 : 0.005);
+  const vStep = (e.shiftKey ? range * 0.1 : range * 0.01);
+
+  if (e.key === 'ArrowLeft' && !isFirst && !isLast) {
+    const minT = (props.curve.nodes[idx - 1]?.t ?? 0) + 0.001;
+    n.t = Math.max(minT, n.t - tStep);
+  } else if (e.key === 'ArrowRight' && !isFirst && !isLast) {
+    const maxT = (props.curve.nodes[idx + 1]?.t ?? 1) - 0.001;
+    n.t = Math.min(maxT, n.t + tStep);
+  } else if (e.key === 'ArrowUp') {
+    n.value = Math.min(props.curve.max, n.value + vStep);
+  } else if (e.key === 'ArrowDown') {
+    n.value = Math.max(props.curve.min, n.value - vStep);
+  }
+
+  emit('change');
+  draw();
+}
+
 onMounted(() => {
   fitCanvas();
   window.addEventListener("resize", fitCanvas);
   window.addEventListener("mousemove", onMove);
   window.addEventListener("mouseup", onUp);
+  window.addEventListener("keydown", onKeydown);
 });
 
 onUnmounted(() => {
   window.removeEventListener("resize", fitCanvas);
   window.removeEventListener("mousemove", onMove);
   window.removeEventListener("mouseup", onUp);
+  window.removeEventListener("keydown", onKeydown);
 });
 
 const hasSelectedNode = computed(() => selectedNodeIdx.value >= 0 && selectedNodeIdx.value < props.curve.nodes.length);

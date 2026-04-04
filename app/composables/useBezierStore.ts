@@ -770,29 +770,32 @@ function importProject(data: ProjectData) {
 }
 
 function downloadProject() {
-  const data = exportProject();
-  const json = JSON.stringify(data, null, 2);
-  const blob = new Blob([json], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `spiralux-${Date.now()}.json`;
-  a.click();
-  URL.revokeObjectURL(url);
+  // Alias for downloadSVG — project data is now embedded in the SVG
+  downloadSVG();
 }
 
 function uploadProject(): Promise<void> {
   return new Promise((resolve) => {
     const input = document.createElement("input");
     input.type = "file";
-    input.accept = ".json";
+    input.accept = ".spiralux.svg,.svg,.json";
     input.onchange = async () => {
       const file = input.files?.[0];
       if (!file) { resolve(); return; }
       try {
         const text = await file.text();
-        const data = JSON.parse(text) as ProjectData;
-        if (!data.version || !data.paths) throw new Error("Invalid project file");
+        let data: ProjectData | null = null;
+
+        if (file.name.endsWith(".svg")) {
+          // Extract embedded JSON from <metadata><spiralux-data>...</spiralux-data></metadata>
+          const match = text.match(/<spiralux-data>([\s\S]*?)<\/spiralux-data>/);
+          if (!match) throw new Error("No spiralux data found in SVG");
+          data = JSON.parse(match[1]!) as ProjectData;
+        } else {
+          data = JSON.parse(text) as ProjectData;
+        }
+
+        if (!data || !data.version || !data.paths) throw new Error("Invalid project file");
         importProject(data);
       } catch (e) {
         console.error("Failed to import project:", e);
@@ -876,6 +879,9 @@ function downloadSVG() {
   const vh = (maxY - minY) + pad * 2;
 
   let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vx} ${vy} ${vw} ${vh}" width="${Math.round(vw)}" height="${Math.round(vh)}">\n`;
+  // Embed full project data so the file is self-contained and re-importable
+  const projectJson = JSON.stringify(exportProject());
+  svg += `  <metadata><spiralux-data>${projectJson}</spiralux-data></metadata>\n`;
   svg += `  <rect x="${vx}" y="${vy}" width="${vw}" height="${vh}" fill="#0f0f1a"/>\n`;
 
   // Spines
@@ -909,7 +915,7 @@ function downloadSVG() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `spiralux-${Date.now()}.svg`;
+  a.download = `spiralux-${Date.now()}.spiralux.svg`;
   a.click();
   URL.revokeObjectURL(url);
 }
