@@ -3,6 +3,29 @@
 /* Nuxt root container must fill viewport for flex layouts */
 #__nuxt { height: 100%; }
 
+/* ===== Default theme values (dark) — applied before JS loads ===== */
+:root {
+  --bg-base: 16 16 16;
+  --bg-surface: 24 24 24;
+  --bg-elevated: 34 34 34;
+  --bg-canvas: 8 8 8;
+  --border: 255 255 255 / 0.07;
+  --border-focus: 255 255 255 / 0.14;
+  --text-primary: 230 230 230;
+  --text-secondary: 155 155 155;
+  --text-muted: 95 95 95;
+  --accent: 160 120 255;
+  --accent-hover: 180 145 255;
+  --accent-glow: 160 120 255 / 0.15;
+  --shadow-color: 0 0 0 / 0.6;
+  --glass-bg: 24 24 24 / 0.7;
+}
+
+html, body {
+  background-color: rgb(var(--bg-base));
+  color: rgb(var(--text-primary));
+}
+
 /* ===== Theme tokens — mapped to CSS vars set by JS ===== */
 @theme {
   --color-base: rgb(var(--bg-base));

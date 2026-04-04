@@ -45,6 +45,23 @@ const {
   downloadSVG,
 } = useBezierStore();
 
+// Theme
+const { THEMES, applyTheme, getCurrentTheme } = await import('~/utils/themes');
+const currentThemeId = ref(getCurrentTheme().id);
+function switchTheme(id: string) {
+  const theme = THEMES.find((t: any) => t.id === id);
+  if (!theme) return;
+  applyTheme(theme);
+  currentThemeId.value = id;
+}
+
+const showNav = ref(false);
+const route = useRoute();
+function navigate(path: string) {
+  showNav.value = false;
+  navigateTo(path);
+}
+
 const selCount = computed(() => selectedIds.size);
 const isVertical = computed(() => toolbarDock.value === "left" || toolbarDock.value === "right");
 
@@ -97,6 +114,39 @@ function onDragEnd() {
 
     <!-- ── Row 0: Path list / switcher ──────────────────────────── -->
     <div class="toolbar-row gap-1">
+
+      <!-- Nav menu -->
+      <div class="relative">
+        <button class="tb" data-tip="Menu" @click="showNav = !showNav">
+          <i class="i-mdi-menu text-lg" />
+        </button>
+        <Transition name="menu">
+          <div
+            v-if="showNav"
+            class="absolute left-0 z-50 min-w-36 bg-surface border border-border/60 rounded-lg shadow-lg overflow-hidden"
+            :class="toolbarDock === 'top' ? 'top-full mt-1' : 'bottom-full mb-1'"
+          >
+            <button
+              class="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-elevated/60 transition-colors cursor-pointer"
+              :class="route.path === '/' ? 'text-accent font-semibold' : 'text-primary'"
+              @click="navigate('/')"
+            >
+              <i class="i-mdi-vector-bezier" /> Editor
+            </button>
+            <button
+              class="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-elevated/60 transition-colors cursor-pointer"
+              :class="route.path === '/evolve' ? 'text-accent font-semibold' : 'text-primary'"
+              @click="navigate('/evolve')"
+            >
+              <i class="i-mdi-dna" /> Genetic Evolution
+            </button>
+          </div>
+        </Transition>
+        <div v-if="showNav" class="fixed inset-0 z-40" @click="showNav = false" />
+      </div>
+
+      <div class="divider" />
+
       <span class="toolbar-label">Lines</span>
 
       <div
@@ -239,6 +289,16 @@ function onDragEnd() {
       <button class="tb" data-tip="Export SVG" @click="downloadSVG">
         <i class="i-mdi-file-export-outline text-lg" />
       </button>
+
+      <div class="divider" />
+
+      <select
+        class="h-7 text-[10px] bg-elevated/50 border border-border/40 rounded px-1 text-primary cursor-pointer"
+        :value="currentThemeId"
+        @change="(e: Event) => switchTheme((e.target as HTMLSelectElement).value)"
+      >
+        <option v-for="t in THEMES" :key="t.id" :value="t.id">{{ t.name }}</option>
+      </select>
 
       <span class="text-[10px] text-muted tabular-nums">
         {{ activePath?.nodes.length ?? 0 }} nodes
@@ -428,5 +488,13 @@ function onDragEnd() {
   font-family: ui-monospace, monospace;
   font-size: 9px;
   color: rgb(var(--text-muted));
+}
+
+.menu-enter-active, .menu-leave-active {
+  transition: opacity 0.12s, transform 0.12s;
+}
+.menu-enter-from, .menu-leave-to {
+  opacity: 0;
+  transform: translateY(4px);
 }
 </style>

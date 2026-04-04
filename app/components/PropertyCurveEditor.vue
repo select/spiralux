@@ -186,10 +186,17 @@ function hitSegment(mx: number, my: number): number {
   const threshold = HIT_R.value;
 
   for (let seg = 0; seg < nodes.length - 1; seg++) {
+    const a = nodes[seg]!;
+    const b = nodes[seg + 1]!;
+    const p0t = a.t, p1t = a.t + a.handleOut.dt, p2t = b.t + b.handleIn.dt, p3t = b.t;
+    const p0v = a.value, p1v = a.value + a.handleOut.dv, p2v = b.value + b.handleIn.dv, p3v = b.value;
+
     for (let s = 0; s <= steps; s++) {
-      const t = s / steps;
-      const val = evaluateSegment(seg, t);
-      const globalT = nodes[seg]!.t + t * (nodes[seg + 1]!.t - nodes[seg]!.t);
+      const u = s / steps;
+      const mu = 1 - u;
+      // Evaluate both t and value as cubic beziers (matches what draw() renders)
+      const globalT = mu ** 3 * p0t + 3 * mu ** 2 * u * p1t + 3 * mu * u ** 2 * p2t + u ** 3 * p3t;
+      const val = mu ** 3 * p0v + 3 * mu ** 2 * u * p1v + 3 * mu * u ** 2 * p2v + u ** 3 * p3v;
       const px = tToX(globalT);
       const py = valToY(val);
       if ((px - mx) ** 2 + (py - my) ** 2 < threshold * threshold) return seg;

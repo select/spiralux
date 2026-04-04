@@ -841,7 +841,10 @@ function downloadSVG() {
     // Generate spiral
     if (p.spiral.enabled) {
       const maxFreq = Math.max(...p.spiral.frequency.nodes.map(n => n.value), 1);
-      const numSamples = Math.max(600, Math.min(20000, Math.round(pathLen * maxFreq * 0.5)));
+      const maxRadius = Math.max(...p.spiral.radius.nodes.map(n => n.value), 1);
+      const minRadius = Math.min(...p.spiral.radius.nodes.map(n => n.value), maxRadius);
+      const radiusRatio = minRadius > 0.1 ? maxRadius / Math.max(minRadius, maxRadius * 0.2) : 5;
+      const numSamples = Math.max(800, Math.min(40000, Math.round(pathLen * maxFreq * 0.5 * radiusRatio)));
       const samples = sampleBezierPath(p.nodes, p.closed, numSamples);
       const pts = generateSpiralPoints(samples, p.spiral);
 

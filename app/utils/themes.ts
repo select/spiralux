@@ -131,7 +131,7 @@ export function applyTheme(theme: Theme) {
 
 export function loadSavedTheme(): Theme {
   const saved = localStorage.getItem("spiralux-theme");
-  const theme = THEMES.find((t) => t.id === saved) ?? THEMES[0]!;
+  const theme = THEMES.find((t) => t.id === saved) ?? THEMES.find((t) => t.id === "obsidian")!;
   applyTheme(theme);
   return theme;
 }

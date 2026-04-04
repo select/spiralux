@@ -90,7 +90,11 @@ export function drawPathSpiral(
 
   const pathLen = estimatePathLength(path.nodes, path.closed);
   const maxFreq = Math.max(...path.spiral.frequency.nodes.map(n => n.value), 1);
-  const numSamples = Math.max(600, Math.min(20000, Math.round(pathLen * maxFreq * 0.5)));
+  const maxRadius = Math.max(...path.spiral.radius.nodes.map(n => n.value), 1);
+  const minRadius = Math.min(...path.spiral.radius.nodes.map(n => n.value), maxRadius);
+  // More samples when radius varies a lot (travel compensation speeds up angular rate at small radius)
+  const radiusRatio = minRadius > 0.1 ? maxRadius / Math.max(minRadius, maxRadius * 0.2) : 5;
+  const numSamples = Math.max(800, Math.min(40000, Math.round(pathLen * maxFreq * 0.5 * radiusRatio)));
   const samples = sampleBezierPath(path.nodes, path.closed, numSamples);
   const pts = generateSpiralPoints(samples, path.spiral);
   if (pts.length < 2) { ctx.globalCompositeOperation = prevComposite; return; }
