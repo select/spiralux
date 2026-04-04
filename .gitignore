@@ -7,3 +7,4 @@ dist/
 # Symlinks replaced by copies in CI
 public/output
 public/target
+docs/travel evolution/
