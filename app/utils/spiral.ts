@@ -267,6 +267,7 @@ export function generateSpiralPoints(
 
     const radius = evaluatePropCurve(config.radius, t);
     const elliptic = evaluatePropCurve(config.elliptic, t);
+    const orientDeg = evaluatePropCurve(config.orientation, t);
     const freq = evaluatePropCurve(config.frequency, t);
 
     if (i > 0) {
@@ -287,19 +288,25 @@ export function generateSpiralPoints(
       cumulativeAngle += freq * ds * 0.05 * travel;
     }
 
-    // 2D spiral: oscillate perpendicular to backbone only
-    // Normal displacement = radius * sin(angle)
-    // Tangent displacement = radius * elliptic * cos(angle) (adds width variation)
+    // Elliptic spiral in local tangent/normal frame, rotated by orientation
     const sinA = Math.sin(cumulativeAngle);
     const cosA = Math.cos(cumulativeAngle);
 
-    const nOff = radius * sinA;
-    const tOff = radius * elliptic * cosA;
+    // Local frame: tangent = cos axis, normal = sin axis; elliptic scales one axis
+    let localT = radius * cosA;
+    let localN = radius * elliptic * sinA;
+
+    // Rotate by orientation angle
+    const orientRad = (orientDeg * Math.PI) / 180;
+    const cosO = Math.cos(orientRad);
+    const sinO = Math.sin(orientRad);
+    const rotT = localT * cosO - localN * sinO;
+    const rotN = localT * sinO + localN * cosO;
 
     // Transform to world space
     points.push({
-      x: s.x + nOff * s.nx + tOff * s.tx,
-      y: s.y + nOff * s.ny + tOff * s.ty,
+      x: s.x + rotT * s.nx + rotN * s.tx,
+      y: s.y + rotT * s.ny + rotN * s.ty,
     });
   }
 
