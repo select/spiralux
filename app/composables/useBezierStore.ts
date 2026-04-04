@@ -894,10 +894,13 @@ function downloadSVG() {
     }
   }
 
-  // Spirals with blend mode
+  // Spirals — blend modes that add light work in SVG; perceptual modes (hue/saturation/color/luminosity)
+  // are invisible on dark backgrounds so we only apply supported compositing modes.
   const blend = spiralBlendMode.value;
-  if (blend !== "source-over") {
-    svg += `  <g style="mix-blend-mode: ${blend}">\n`;
+  const SVG_SAFE_BLENDS = new Set(['screen','lighten','multiply','darken','overlay','soft-light','hard-light','difference','exclusion','color-dodge','color-burn']);
+  const svgBlend = SVG_SAFE_BLENDS.has(blend) ? blend : null;
+  if (svgBlend) {
+    svg += `  <g style="mix-blend-mode: ${svgBlend}">\n`;
   }
   for (const pd of pathData) {
     if (pd.points.length < 2) continue;
@@ -905,7 +908,7 @@ function downloadSVG() {
     const d = "M" + pd.points.map(p => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" L");
     svg += `  <path d="${d}" fill="none" stroke="${pd.color}" stroke-width="1.2" stroke-opacity="0.85"/>\n`;
   }
-  if (blend !== "source-over") {
+  if (svgBlend) {
     svg += `  </g>\n`;
   }
 
