@@ -30,9 +30,26 @@ const {
   spiralBlendMode,
   toolbarDock,
   propsDock,
+  templateUrl,
+  templateVisible,
 } = useBezierStore();
 
 const canvasEl = ref<HTMLCanvasElement | null>(null);
+
+// ── Template image ───────────────────────────────────────────────────────────
+
+// Loaded HTMLImageElement for the active template (null = none)
+const templateImg = ref<HTMLImageElement | null>(null);
+
+watch(templateUrl, (url) => {
+  if (!url) { templateImg.value = null; return; }
+  const img = new Image();
+  img.onload = () => { templateImg.value = img; draw(); };
+  img.onerror = () => { templateImg.value = null; };
+  img.src = url;
+}, { immediate: true });
+
+watch(templateVisible, () => draw());
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -163,7 +180,24 @@ function cssProp(name: string, fallback: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
 }
 
+// Coalesce multiple draw() calls per frame into a single rAF render.
+let _rafId = 0;
 function draw() {
+  if (!_rafId) {
+    _rafId = requestAnimationFrame(() => {
+      _rafId = 0;
+      _drawImmediate();
+    });
+  }
+}
+
+/** Force an immediate (synchronous) draw — use sparingly. */
+function drawNow() {
+  if (_rafId) { cancelAnimationFrame(_rafId); _rafId = 0; }
+  _drawImmediate();
+}
+
+function _drawImmediate() {
   const c = canvasEl.value;
   if (!c) return;
 
@@ -174,6 +208,7 @@ function draw() {
     blendMode: spiralBlendMode.value,
     selectedIds: selectedIds,
     hoveredId: hoveredId.value,
+    templateImg: templateVisible.value ? templateImg.value : null,
   });
 
   // Box select overlay (editor-only, drawn after renderPaths)
@@ -480,6 +515,7 @@ onUnmounted(() => {
   window.removeEventListener("resize", fitCanvas);
   window.removeEventListener("keydown", onKeydown);
   resizeObs?.disconnect();
+  if (_rafId) { cancelAnimationFrame(_rafId); _rafId = 0; }
 });
 </script>
 

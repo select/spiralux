@@ -88,6 +88,25 @@ const toolbarDock = useStorage<DockPosition>("bezier-toolbar-dock", "bottom");
 const propsDock = useStorage<DockPosition>("bezier-props-dock", "top");
 const showSpines = ref(true);
 
+// ── Template overlay ────────────────────────────────────────────────────────
+
+export interface CanvasTemplate {
+  id: string;
+  name: string;
+  url: string;
+}
+
+export const CANVAS_TEMPLATES: CanvasTemplate[] = [
+  { id: "4-bierdeckel", name: "4 Bierdeckel", url: "/template/4-bierdeckel.svg" },
+];
+
+const templateId = useStorage<string | null>("bezier-template-id", null);
+const templateVisible = useStorage<boolean>("bezier-template-visible", true);
+
+const templateUrl = computed(() =>
+  CANVAS_TEMPLATES.find(t => t.id === templateId.value)?.url ?? null
+);
+
 const BLEND_MODES = [
   "source-over", "screen", "multiply", "overlay",
   "lighten", "darken", "color-dodge", "color-burn",
@@ -153,6 +172,7 @@ function duplicatePath(index: number) {
   p.visible = src.visible;
   // Deep-copy spiral config
   p.spiral.enabled = src.spiral.enabled;
+  p.spiral.lineWidth = src.spiral.lineWidth;
   for (const key of ["radius", "elliptic", "orientation", "frequency"] as const) {
     const srcCurve = src.spiral[key];
     p.spiral[key].nodes.splice(0, p.spiral[key].nodes.length,
@@ -211,6 +231,7 @@ interface PropCurveSnap {
 
 interface SpiralSnap {
   enabled: boolean;
+  lineWidth: number;
   radius: PropCurveSnap;
   elliptic: PropCurveSnap;
   orientation: PropCurveSnap;
@@ -247,6 +268,7 @@ function snapPropCurve(c: PropCurve): PropCurveSnap {
 function snapSpiral(s: BezierSpiralConfig): SpiralSnap {
   return {
     enabled: s.enabled,
+    lineWidth: s.lineWidth,
     radius: snapPropCurve(s.radius),
     elliptic: snapPropCurve(s.elliptic),
     orientation: snapPropCurve(s.orientation),
@@ -286,6 +308,7 @@ function applySnapshot(snap: Snapshot) {
   for (const ps of snap.paths) {
     const sp = defaultBezierSpiralConfig();
     sp.enabled = ps.spiral.enabled;
+    sp.lineWidth = ps.spiral.lineWidth ?? 0.3;
     restorePropCurve(sp.radius, ps.spiral.radius);
     restorePropCurve(sp.elliptic, ps.spiral.elliptic);
     restorePropCurve(sp.orientation, ps.spiral.orientation);
@@ -649,6 +672,7 @@ export interface ProjectData {
     visible?: boolean;
     spiral: {
       enabled: boolean;
+      lineWidth?: number;
       radius: { nodes: { id: string; t: number; value: number; handleIn: { dt: number; dv: number }; handleOut: { dt: number; dv: number } }[]; min: number; max: number };
       elliptic: { nodes: { id: string; t: number; value: number; handleIn: { dt: number; dv: number }; handleOut: { dt: number; dv: number } }[]; min: number; max: number };
       orientation: { nodes: { id: string; t: number; value: number; handleIn: { dt: number; dv: number }; handleOut: { dt: number; dv: number } }[]; min: number; max: number };
@@ -690,6 +714,7 @@ function exportProject(): ProjectData {
       visible: p.visible,
       spiral: {
         enabled: p.spiral.enabled,
+        lineWidth: p.spiral.lineWidth,
         radius: serializePropCurve(p.spiral.radius),
         elliptic: serializePropCurve(p.spiral.elliptic),
         orientation: serializePropCurve(p.spiral.orientation),
@@ -712,6 +737,7 @@ function importProject(data: ProjectData) {
   for (const ps of data.paths) {
     const sp = defaultBezierSpiralConfig();
     sp.enabled = ps.spiral.enabled;
+    sp.lineWidth = ps.spiral.lineWidth ?? 0.3;
     for (const key of ["radius", "elliptic", "orientation", "frequency"] as const) {
       const src = ps.spiral[key];
       if (!src) continue;
@@ -809,7 +835,7 @@ function uploadProject(): Promise<void> {
 function downloadSVG() {
   // Compute bounding box across all spiral points + spine nodes
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  const pathData: { name: string; points: { x: number; y: number }[]; color: string; spineD: string }[] = [];
+  const pathData: { name: string; points: { x: number; y: number }[]; color: string; spineD: string; lineWidth: number }[] = [];
 
   for (const p of paths) {
     if (!p.visible || p.nodes.length < 2) continue;
@@ -857,7 +883,7 @@ function downloadSVG() {
         if (pt.x > maxX) maxX = pt.x;
         if (pt.y > maxY) maxY = pt.y;
       }
-      pathData.push({ name: p.name, points: pts, color: p.color, spineD });
+      pathData.push({ name: p.name, points: pts, color: p.color, spineD, lineWidth: p.spiral.lineWidth ?? 0.3 });
     } else {
       // No spiral — just include spine in bounding box
       for (const n of p.nodes) {
@@ -866,7 +892,7 @@ function downloadSVG() {
         if (n.x > maxX) maxX = n.x;
         if (n.y > maxY) maxY = n.y;
       }
-      pathData.push({ name: p.name, points: [], color: p.color, spineD });
+      pathData.push({ name: p.name, points: [], color: p.color, spineD, lineWidth: p.spiral.lineWidth ?? 0.3 });
     }
   }
 
@@ -906,7 +932,8 @@ function downloadSVG() {
     if (pd.points.length < 2) continue;
     svg += `  <!-- spiral: ${pd.name} -->\n`;
     const d = "M" + pd.points.map(p => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" L");
-    svg += `  <path d="${d}" fill="none" stroke="${pd.color}" stroke-width="1.2" stroke-opacity="0.85"/>\n`;
+    const swPx = (pd.lineWidth * 96 / 25.4).toFixed(3);
+    svg += `  <path d="${d}" fill="none" stroke="${pd.color}" stroke-width="${swPx}" stroke-opacity="0.85"/>\n`;
   }
   if (svgBlend) {
     svg += `  </g>\n`;
@@ -993,6 +1020,12 @@ export function useBezierStore() {
     showSpines,
     spiralBlendMode,
     BLEND_MODES,
+
+    // Template overlay
+    CANVAS_TEMPLATES,
+    templateId,
+    templateVisible,
+    templateUrl,
 
     // Import / Export
     exportProject,

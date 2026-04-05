@@ -63,6 +63,20 @@ onUnmounted(() => window.removeEventListener("keydown", onKeydown));
           <i :class="activePath.spiral.enabled ? 'i-mdi-eye-outline' : 'i-mdi-eye-off-outline'" class="text-sm" />
           Spiral
         </button>
+        <!-- Line width -->
+        <label class="flex items-center gap-1 text-[10px] text-muted">
+          <span>lw</span>
+          <input
+            type="number"
+            min="0.01"
+            max="10"
+            step="0.05"
+            class="w-14 h-5 text-[10px] bg-elevated/50 border border-border/40 rounded px-1 text-primary text-right appearance-none"
+            :value="activePath.spiral.lineWidth"
+            @change="(e) => { pushUndo(); activePath!.spiral.lineWidth = Math.max(0.01, parseFloat((e.target as HTMLInputElement).value) || 0.3); }"
+          />
+          <span>mm</span>
+        </label>
         <span class="text-[9px] text-muted">click a curve to edit</span>
       </div>
 

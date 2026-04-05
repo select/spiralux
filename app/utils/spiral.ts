@@ -29,6 +29,8 @@ export interface PropCurve {
 
 export interface BezierSpiralConfig {
   enabled: boolean;
+  /** Stroke width in millimetres */
+  lineWidth: number;
   radius: PropCurve;
   elliptic: PropCurve;
   orientation: PropCurve;
@@ -59,6 +61,7 @@ function makePropNode(t: number, value: number, handleLen = 0.15): PropNode {
 export function defaultBezierSpiralConfig(): BezierSpiralConfig {
   return {
     enabled: true,
+    lineWidth: 0.3,
     radius: {
       label: "Radius",
       color: "#6366f1",

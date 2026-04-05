@@ -42,6 +42,9 @@ const {
   BLEND_MODES,
   downloadProject,
   uploadProject,
+  CANVAS_TEMPLATES,
+  templateId,
+  templateVisible,
 } = useBezierStore();
 
 // Theme
@@ -295,6 +298,28 @@ function onDragEnd() {
       >
         <option v-for="t in THEMES" :key="t.id" :value="t.id">{{ t.name }}</option>
       </select>
+
+      <div class="divider" />
+
+      <!-- Template overlay -->
+      <span class="toolbar-label">Tmpl</span>
+      <select
+        class="h-7 text-[10px] bg-elevated/50 border border-border/40 rounded px-1 text-primary cursor-pointer"
+        :value="templateId ?? ''"
+        @change="(e: Event) => { const v = (e.target as HTMLSelectElement).value; templateId = v || null; }"
+      >
+        <option value="">— none —</option>
+        <option v-for="t in CANVAS_TEMPLATES" :key="t.id" :value="t.id">{{ t.name }}</option>
+      </select>
+      <button
+        class="tb"
+        :class="{ 'opacity-30': !templateId, 'tb-active': templateId && templateVisible }"
+        :data-tip="templateVisible ? 'Hide template' : 'Show template'"
+        :disabled="!templateId"
+        @click="templateVisible = !templateVisible"
+      >
+        <i :class="templateVisible ? 'i-mdi-layers' : 'i-mdi-layers-off'" class="text-lg" />
+      </button>
 
       <span class="text-[10px] text-muted tabular-nums">
         {{ activePath?.nodes.length ?? 0 }} nodes

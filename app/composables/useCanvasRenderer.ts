@@ -106,7 +106,9 @@ export function drawPathSpiral(
   }
   const alphaHex = Math.round(alpha * 255).toString(16).padStart(2, "0");
   ctx.strokeStyle = path.color + alphaHex;
-  ctx.lineWidth = 1.2 / zoomLevel;
+  // 1 mm = 96/25.4 CSS px; drawn in world space so it scales with zoom (physical mm preview)
+  const MM_TO_PX = 96 / 25.4;
+  ctx.lineWidth = (path.spiral.lineWidth ?? 0.3) * MM_TO_PX;
   ctx.stroke();
   ctx.globalCompositeOperation = prevComposite;
 }
@@ -176,6 +178,8 @@ export function renderPaths(
     /** Draw handles/nodes for active path selection state */
     selectedIds?: Set<string>;
     hoveredId?: string | null;
+    /** SVG template image to draw in world-space (pans/zooms with canvas) */
+    templateImg?: HTMLImageElement | null;
   } = {},
 ) {
   const dpr = window.devicePixelRatio || 1;
@@ -187,7 +191,7 @@ export function renderPaths(
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-  const { showSpines = true, blendMode = "source-over", selectedIds, hoveredId } = options;
+  const { showSpines = true, blendMode = "source-over", selectedIds, hoveredId, templateImg } = options;
   const z = view.zoom;
 
   ctx.save();
@@ -195,6 +199,17 @@ export function renderPaths(
   ctx.scale(z, z);
 
   drawGrid(ctx, rect.width, rect.height, view);
+
+  // Template SVG — drawn in world space so it pans/zooms with the canvas.
+  // The SVG's natural pixel dimensions already encode physical mm size
+  // (browser renders mm-unit SVGs at 96 dpi → 1px = 1 CSS px = 1/96in = 25.4/96 mm).
+  if (templateImg && templateImg.complete && templateImg.naturalWidth > 0) {
+    ctx.save();
+    ctx.globalAlpha = 0.35;
+    ctx.drawImage(templateImg, 0, 0, templateImg.naturalWidth, templateImg.naturalHeight);
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
 
   const selectedColor = "#22d3ee";
   const handleColor = "#f59e0b";
