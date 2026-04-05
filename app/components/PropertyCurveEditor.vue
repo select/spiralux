@@ -23,20 +23,6 @@ const emit = defineEmits<{
 
 const { pushUndo, spiralCursorT } = useBezierStore();
 
-// Sync selected node's t-position into the store so BezierCanvas can show it on the spine
-watch(
-  () => {
-    if (!props.expanded) return null;
-    const idx = selectedNodeIdx.value;
-    if (idx < 0 || idx >= props.curve.nodes.length) return null;
-    return props.curve.nodes[idx]!.t;
-  },
-  (t) => { spiralCursorT.value = t; },
-  { immediate: true },
-);
-
-onUnmounted(() => { spiralCursorT.value = null; });
-
 // ── Size constants (responsive to mode) ──────────────────────────────────────
 
 const H = computed(() => props.expanded ? 260 : (props.height ?? 56));
@@ -708,6 +694,20 @@ watch(() => props.expanded, () => {
   // Double rAF to ensure DOM has fully laid out the new size
   requestAnimationFrame(() => requestAnimationFrame(fitCanvas));
 });
+
+// Sync selected node's t-position into the store so BezierCanvas can show it on the spine
+watch(
+  () => {
+    if (!props.expanded) return null;
+    const idx = selectedNodeIdx.value;
+    if (idx < 0 || idx >= props.curve.nodes.length) return null;
+    return props.curve.nodes[idx]!.t;
+  },
+  (t) => { spiralCursorT.value = t; },
+  { immediate: true },
+);
+
+onUnmounted(() => { spiralCursorT.value = null; });
 
 function onKeydown(e: KeyboardEvent) {
   if (!props.expanded) return;
