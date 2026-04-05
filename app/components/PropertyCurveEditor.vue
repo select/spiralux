@@ -21,7 +21,21 @@ const emit = defineEmits<{
   (e: "change"): void;
 }>();
 
-const { pushUndo } = useBezierStore();
+const { pushUndo, spiralCursorT } = useBezierStore();
+
+// Sync selected node's t-position into the store so BezierCanvas can show it on the spine
+watch(
+  () => {
+    if (!props.expanded) return null;
+    const idx = selectedNodeIdx.value;
+    if (idx < 0 || idx >= props.curve.nodes.length) return null;
+    return props.curve.nodes[idx]!.t;
+  },
+  (t) => { spiralCursorT.value = t; },
+  { immediate: true },
+);
+
+onUnmounted(() => { spiralCursorT.value = null; });
 
 // ── Size constants (responsive to mode) ──────────────────────────────────────
 
@@ -702,6 +716,7 @@ function onKeydown(e: KeyboardEvent) {
   if (!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)) return;
 
   e.preventDefault();
+  e.stopPropagation(); // prevent BezierCanvas from also moving on this arrow key
   pushUndo();
 
   const n = props.curve.nodes[idx]!;
@@ -734,14 +749,14 @@ onMounted(() => {
   window.addEventListener("resize", fitCanvas);
   window.addEventListener("mousemove", onMove);
   window.addEventListener("mouseup", onUp);
-  window.addEventListener("keydown", onKeydown);
+  window.addEventListener("keydown", onKeydown, { capture: true });
 });
 
 onUnmounted(() => {
   window.removeEventListener("resize", fitCanvas);
   window.removeEventListener("mousemove", onMove);
   window.removeEventListener("mouseup", onUp);
-  window.removeEventListener("keydown", onKeydown);
+  window.removeEventListener("keydown", onKeydown, { capture: true });
 });
 
 const hasSelectedNode = computed(() => selectedNodeIdx.value >= 0 && selectedNodeIdx.value < props.curve.nodes.length);

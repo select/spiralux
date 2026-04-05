@@ -180,6 +180,8 @@ export function renderPaths(
     hoveredId?: string | null;
     /** SVG template image to draw in world-space (pans/zooms with canvas) */
     templateImg?: HTMLImageElement | null;
+    /** Arc-length t (0–1) of the selected property-curve node — shown as a marker on the active path's spine */
+    spiralCursorT?: number | null;
   } = {},
 ) {
   const dpr = window.devicePixelRatio || 1;
@@ -191,7 +193,7 @@ export function renderPaths(
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-  const { showSpines = true, blendMode = "source-over", selectedIds, hoveredId, templateImg } = options;
+  const { showSpines = true, blendMode = "source-over", selectedIds, hoveredId, templateImg, spiralCursorT } = options;
   const z = view.zoom;
 
   ctx.save();
@@ -279,6 +281,41 @@ export function renderPaths(
         ctx.strokeStyle = "rgba(0,0,0,0.4)";
         ctx.lineWidth = 1 / z;
         ctx.stroke();
+      }
+    }
+  }
+
+  // ── Spiral cursor marker ──────────────────────────────────────────────────
+  // Red dot on the active path's spine at the arc-length position of the
+  // currently selected property-curve node.
+  if (spiralCursorT !== null && spiralCursorT !== undefined && showSpines && activeIndex >= 0) {
+    const cursorPath = paths[activeIndex];
+    if (cursorPath && cursorPath.nodes.length >= 2) {
+      const samples = sampleBezierPath(cursorPath.nodes as BezierNode[], cursorPath.closed ?? false, 200);
+      if (samples.length >= 2) {
+        // Linear interpolation through arc-length-parameterised samples
+        let sx = samples[0]!.x, sy = samples[0]!.y;
+        for (let i = 1; i < samples.length; i++) {
+          const smp = samples[i]!;
+          if (smp.t >= spiralCursorT || i === samples.length - 1) {
+            const prev = samples[i - 1]!;
+            const span = smp.t - prev.t;
+            const frac = span > 0 ? (spiralCursorT - prev.t) / span : 0;
+            sx = prev.x + (smp.x - prev.x) * frac;
+            sy = prev.y + (smp.y - prev.y) * frac;
+            break;
+          }
+        }
+        const r = 5 / z;
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(sx, sy, r, 0, Math.PI * 2);
+        ctx.fillStyle = "#ef4444";
+        ctx.fill();
+        ctx.strokeStyle = "rgba(255,255,255,0.8)";
+        ctx.lineWidth = 1.5 / z;
+        ctx.stroke();
+        ctx.restore();
       }
     }
   }

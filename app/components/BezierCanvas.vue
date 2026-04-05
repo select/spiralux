@@ -32,6 +32,7 @@ const {
   propsDock,
   templateUrl,
   templateVisible,
+  spiralCursorT,
 } = useBezierStore();
 
 const canvasEl = ref<HTMLCanvasElement | null>(null);
@@ -209,6 +210,7 @@ function _drawImmediate() {
     selectedIds: selectedIds,
     hoveredId: hoveredId.value,
     templateImg: templateVisible.value ? templateImg.value : null,
+    spiralCursorT: spiralCursorT.value,
   });
 
   // Box select overlay (editor-only, drawn after renderPaths)
@@ -490,6 +492,7 @@ watch(paths, () => draw(), { deep: true });
 watch(activePathIndex, () => draw());
 watch(showSpines, () => draw());
 watch(spiralBlendMode, () => draw());
+watch(spiralCursorT, () => draw());
 
 // Re-fit canvas when dock positions change (layout resize)
 watch([toolbarDock, propsDock], () => {

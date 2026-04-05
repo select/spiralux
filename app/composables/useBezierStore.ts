@@ -88,6 +88,9 @@ const toolbarDock = useStorage<DockPosition>("bezier-toolbar-dock", "bottom");
 const propsDock = useStorage<DockPosition>("bezier-props-dock", "top");
 const showSpines = ref(true);
 
+/** Arc-length t (0–1) of the property-curve node currently selected in the spiral panel */
+const spiralCursorT = ref<number | null>(null);
+
 // ── Template overlay ────────────────────────────────────────────────────────
 
 export interface CanvasTemplate {
@@ -1018,6 +1021,7 @@ export function useBezierStore() {
     toolbarDock,
     propsDock,
     showSpines,
+    spiralCursorT,
     spiralBlendMode,
     BLEND_MODES,
 
