@@ -236,33 +236,8 @@ export function generateSpiralPoints(
 ): Vec2[] {
   if (samples.length < 2 || !config.enabled) return [];
 
-  // Travel compensation: scale angular rate inversely with radius so that
-  // larger coils advance the centerpoint further per revolution, keeping
-  // spine crossing intervals approximately uniform.
-  //
-  // Linear radius growth already produces even crossings, so we only apply
-  // correction where the radius curve is non-linear. We measure this via
-  // the second derivative (curvature) of the radius curve at each point:
-  // zero for linear segments, nonzero where the curve bends.
-  const NUM_REF_SAMPLES = 64;
-  const rSamples: number[] = [];
-  let radiusMax = 0;
-  for (let i = 0; i < NUM_REF_SAMPLES; i++) {
-    const r = evaluatePropCurve(config.radius, i / (NUM_REF_SAMPLES - 1));
-    rSamples.push(r);
-    if (r > radiusMax) radiusMax = r;
-  }
-  // Pre-compute max |d²r/dt²| for normalization
-  let maxAccel = 0;
-  for (let i = 1; i < NUM_REF_SAMPLES - 1; i++) {
-    const accel = Math.abs(rSamples[i + 1]! - 2 * rSamples[i]! + rSamples[i - 1]!);
-    if (accel > maxAccel) maxAccel = accel;
-  }
-  const radiusFloor = radiusMax * 0.2;
-
   const points: Vec2[] = [];
   let cumulativeAngle = 0;
-  const eps = 1 / (NUM_REF_SAMPLES - 1);
 
   for (let i = 0; i < samples.length; i++) {
     const s = samples[i]!;
@@ -278,17 +253,7 @@ export function generateSpiralPoints(
       const ds = Math.sqrt(
         (s.x - prev.x) ** 2 + (s.y - prev.y) ** 2,
       );
-      // Local curvature of radius curve (second derivative)
-      const rPrev = evaluatePropCurve(config.radius, Math.max(0, t - eps));
-      const rNext = evaluatePropCurve(config.radius, Math.min(1, t + eps));
-      const accel = Math.abs(rNext - 2 * radius + rPrev);
-      const curvatureBlend = maxAccel > 0 ? Math.min(1, accel / maxAccel) : 0;
-
-      // Blend: 0 = no correction (linear), 1 = full correction (curved)
-      const effectiveRadius = Math.max(radius, radiusFloor);
-      const fullTravel = radiusMax > 0 ? radiusMax / effectiveRadius : 1;
-      const travel = 1 + (fullTravel - 1) * curvatureBlend;
-      cumulativeAngle += freq * ds * 0.05 * travel;
+      cumulativeAngle += freq * ds * 0.05;
     }
 
     // Elliptic spiral in local tangent/normal frame, rotated by orientation
@@ -315,3 +280,44 @@ export function generateSpiralPoints(
 
   return points;
 }
+
+// ── Crossing correction experiments (notes for future work) ──────────────────
+//
+// Problem: with circular coils and varying radius, the spiral crosses the
+// spine at positions s ± r (tangent offset). When r varies, visible
+// same-side (360°) crossing distances become non-uniform.
+//
+// Key findings from experiments (scripts/crossing-*.ts):
+//
+// 1. ARC-LENGTH spacing between crossings is already perfectly uniform
+//    (CV=0%) with no correction. The visible non-uniformity comes purely
+//    from the ±r tangent offset at each crossing point.
+//
+// 2. Angular rate corrections tested (1/r, dr/ds, phase-aware sin(θ)*dr/ds)
+//    all made same-side uniformity WORSE because the tangent offset
+//    dominates and can't be cancelled by smooth ω modulation — the
+//    per-sample sinusoidal correction creates feedback oscillations.
+//
+// 3. Reducing the tangent component (TANGENT_SCALE < 1 on localN) gives
+//    near-perfect crossing uniformity (CV=11% at scale=0.1) but changes
+//    circles to ellipses — rejected for visual reasons.
+//
+// 4. Two-pass iterative correction (scripts/crossing-oneside.ts) works
+//    mathematically: side-A crossings converge to uniform 4.19 spacing
+//    (crossings 1–27 all perfect). But the non-uniform angular rate
+//    produces a visual result that doesn't look good.
+//
+// 5. Spine-position compensation (shifting backbone by -r·sinθ) fixes
+//    crossings analytically but causes foldback artifacts when r is
+//    large relative to path length.
+//
+// 6. Only ONE side needs uniform advance — odd crossings can be irregular.
+//    Same-side = full 360° revolution distance.
+//
+// Conclusion: with true circular coils, the ±r tangent offset is an
+// inherent geometric property. The current no-correction approach gives
+// the cleanest visual result. Future ideas to explore:
+//   - Per-coil arc segments (define crossings first, fit arcs between)
+//   - 3D helix projection onto 2D (different parameterization)
+//   - User-adjustable tangent scale via UI (separate from elliptic)
+//   - Frequency-adaptive: auto-increase freq where dr/ds is large
