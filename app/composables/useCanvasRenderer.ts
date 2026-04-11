@@ -4,7 +4,7 @@
  */
 import type { BezierNode, Vec2 } from "~/composables/useBezierStore";
 import type { BezierSpiralConfig } from "~/utils/spiral";
-import { sampleBezierPath, generateSpiralPoints } from "~/utils/spiral";
+import { sampleBezierPath, generateSpiralPoints, buildSpiralLUTs } from "~/utils/spiral";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -99,13 +99,14 @@ export function drawPathSpiral(
   const deformFactor = maxDeformNodes > 4 ? (maxDeformNodes / 4) ** 1.5 : 1;
   const numSamples = Math.max(800, Math.min(120000, Math.round(pathLen * maxFreq * 1.0 * radiusRatio * deformFactor)));
   const samples = sampleBezierPath(path.nodes, path.closed, numSamples);
-  const pts = generateSpiralPoints(samples, path.spiral);
+  const luts = buildSpiralLUTs(path.spiral);
+  const pts = generateSpiralPoints(samples, path.spiral, luts);
   if (pts.length < 2) { ctx.globalCompositeOperation = prevComposite; return; }
 
   ctx.beginPath();
-  ctx.moveTo(pts[0]!.x, pts[0]!.y);
+  ctx.moveTo(pts.data[0]!, pts.data[1]!);
   for (let i = 1; i < pts.length; i++) {
-    ctx.lineTo(pts[i]!.x, pts[i]!.y);
+    ctx.lineTo(pts.data[i * 2]!, pts.data[i * 2 + 1]!);
   }
   const alphaHex = Math.round(alpha * 255).toString(16).padStart(2, "0");
   ctx.strokeStyle = path.color + alphaHex;

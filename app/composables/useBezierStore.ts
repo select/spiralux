@@ -4,8 +4,8 @@
  */
 import { reactive, ref, computed } from "vue";
 import { useStorage } from "@vueuse/core";
-import type { BezierSpiralConfig, PropCurve, DeformPoint } from "~/utils/spiral";
-import { defaultBezierSpiralConfig, propUid, bumpPropId, sampleBezierPath, generateSpiralPoints, makeDeformPoint } from "~/utils/spiral";
+import type { BezierSpiralConfig, PropCurve, DeformPoint, SpiralPointArray } from "~/utils/spiral";
+import { defaultBezierSpiralConfig, propUid, bumpPropId, sampleBezierPath, generateSpiralPoints, buildSpiralLUTs, makeDeformPoint } from "~/utils/spiral";
 
 // ── Data model ───────────────────────────────────────────────────────────────
 
@@ -905,7 +905,7 @@ function uploadProject(): Promise<void> {
 function downloadSVG() {
   // Compute bounding box across all spiral points + spine nodes
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  const pathData: { name: string; points: { x: number; y: number }[]; color: string; spineD: string; lineWidth: number }[] = [];
+  const pathData: { name: string; points: SpiralPointArray; color: string; spineD: string; lineWidth: number }[] = [];
 
   for (const p of paths) {
     if (!p.visible || p.nodes.length < 2) continue;
@@ -945,13 +945,16 @@ function downloadSVG() {
       const radiusRatio = minRadius > 0.1 ? maxRadius / Math.max(minRadius, maxRadius * 0.2) : 5;
       const numSamples = Math.max(800, Math.min(40000, Math.round(pathLen * maxFreq * 0.5 * radiusRatio)));
       const samples = sampleBezierPath(p.nodes, p.closed, numSamples);
-      const pts = generateSpiralPoints(samples, p.spiral);
+      const luts = buildSpiralLUTs(p.spiral);
+      const pts = generateSpiralPoints(samples, p.spiral, luts);
 
-      for (const pt of pts) {
-        if (pt.x < minX) minX = pt.x;
-        if (pt.y < minY) minY = pt.y;
-        if (pt.x > maxX) maxX = pt.x;
-        if (pt.y > maxY) maxY = pt.y;
+      for (let pi = 0; pi < pts.length; pi++) {
+        const px = pts.data[pi * 2]!;
+        const py = pts.data[pi * 2 + 1]!;
+        if (px < minX) minX = px;
+        if (py < minY) minY = py;
+        if (px > maxX) maxX = px;
+        if (py > maxY) maxY = py;
       }
       pathData.push({ name: p.name, points: pts, color: p.color, spineD, lineWidth: p.spiral.lineWidth ?? 0.3 });
     } else {
@@ -962,7 +965,7 @@ function downloadSVG() {
         if (n.x > maxX) maxX = n.x;
         if (n.y > maxY) maxY = n.y;
       }
-      pathData.push({ name: p.name, points: [], color: p.color, spineD, lineWidth: p.spiral.lineWidth ?? 0.3 });
+      pathData.push({ name: p.name, points: { data: new Float32Array(0), length: 0 }, color: p.color, spineD, lineWidth: p.spiral.lineWidth ?? 0.3 });
     }
   }
 
@@ -992,7 +995,11 @@ function downloadSVG() {
   for (const pd of pathData) {
     if (pd.points.length < 2) continue;
     svg += `  <!-- spiral: ${pd.name} -->\n`;
-    const d = `M${pd.points.map(p => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" L")}`;
+    const coords: string[] = [];
+    for (let pi = 0; pi < pd.points.length; pi++) {
+      coords.push(`${pd.points.data[pi * 2]!.toFixed(2)},${pd.points.data[pi * 2 + 1]!.toFixed(2)}`);
+    }
+    const d = `M${coords.join(" L")}`;
     const swPx = (pd.lineWidth * 96 / 25.4).toFixed(3);
     svg += `  <path d="${d}" fill="none" stroke="${pd.color}" stroke-width="${swPx}" stroke-opacity="0.85"/>\n`;
   }

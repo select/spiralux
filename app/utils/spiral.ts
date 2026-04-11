@@ -375,6 +375,42 @@ export function evaluatePropCurve(curve: PropCurve, t: number): number {
   return cubicBezier1D(p0v, p1v, p2v, p3v, u);
 }
 
+// ── PropCurve LUT cache ──────────────────────────────────────────────────────
+// Pre-compute a lookup table for a property curve to replace the 20-iteration
+// binary search with O(1) linear interpolation. Build once per curve change.
+
+const PROP_LUT_SIZE = 1024;
+
+export function buildPropLUT(curve: PropCurve): Float32Array {
+  const lut = new Float32Array(PROP_LUT_SIZE);
+  for (let i = 0; i < PROP_LUT_SIZE; i++) {
+    lut[i] = evaluatePropCurve(curve, i / (PROP_LUT_SIZE - 1));
+  }
+  return lut;
+}
+
+function samplePropLUT(lut: Float32Array, t: number): number {
+  const fi = t * (PROP_LUT_SIZE - 1);
+  const i = fi | 0; // fast floor
+  if (i >= PROP_LUT_SIZE - 1) return lut[PROP_LUT_SIZE - 1]!;
+  if (i < 0) return lut[0]!;
+  const f = fi - i;
+  return lut[i]! + (lut[i + 1]! - lut[i]!) * f;
+}
+
+/** Build LUTs for all property curves in a spiral config */
+export interface SpiralLUTs {
+  radius: Float32Array;
+  frequency: Float32Array;
+}
+
+export function buildSpiralLUTs(config: BezierSpiralConfig): SpiralLUTs {
+  return {
+    radius: buildPropLUT(config.radius),
+    frequency: buildPropLUT(config.frequency),
+  };
+}
+
 // ── Sample a bezier path backbone ────────────────────────────────────────────
 
 export interface PathSample {
@@ -546,27 +582,45 @@ function sampleDeformAtT(
 
 // ── Spiral generation ────────────────────────────────────────────────────────
 
+/**
+ * Flat Float32Array of interleaved [x, y] pairs for spiral output.
+ * Avoids GC pressure from thousands of Vec2 object allocations.
+ */
+export interface SpiralPointArray {
+  /** Flat Float32Array: [x0, y0, x1, y1, ...] */
+  data: Float32Array;
+  /** Number of points (data.length / 2) */
+  length: number;
+}
+
 export function generateSpiralPoints(
   samples: PathSample[],
   config: BezierSpiralConfig,
-): Vec2[] {
-  if (samples.length < 2 || !config.enabled) return [];
+  luts?: SpiralLUTs,
+): SpiralPointArray {
+  const EMPTY: SpiralPointArray = { data: new Float32Array(0), length: 0 };
+  if (samples.length < 2 || !config.enabled) return EMPTY;
 
-  const points: Vec2[] = [];
+  // Build or use pre-computed LUTs for O(1) property curve evaluation
+  const radiusLUT = luts?.radius ?? buildPropLUT(config.radius);
+  const freqLUT = luts?.frequency ?? buildPropLUT(config.frequency);
+
+  const n = samples.length;
+  const data = new Float32Array(n * 2);
   let cumulativeAngle = 0;
 
-  for (let i = 0; i < samples.length; i++) {
+  for (let i = 0; i < n; i++) {
     const s = samples[i]!;
     const t = s.t;
 
-    const radius = evaluatePropCurve(config.radius, t);
-    const freq = evaluatePropCurve(config.frequency, t);
+    const radius = samplePropLUT(radiusLUT, t);
+    const freq = samplePropLUT(freqLUT, t);
 
     if (i > 0) {
       const prev = samples[i - 1]!;
-      const ds = Math.sqrt(
-        (s.x - prev.x) ** 2 + (s.y - prev.y) ** 2,
-      );
+      const dx = s.x - prev.x;
+      const dy = s.y - prev.y;
+      const ds = Math.sqrt(dx * dx + dy * dy);
       cumulativeAngle += freq * ds * 0.05;
     }
 
@@ -575,13 +629,11 @@ export function generateSpiralPoints(
     const rotN = radius * (deformPt?.y ?? Math.sin(cumulativeAngle));
 
     // Transform to world space
-    points.push({
-      x: s.x + rotT * s.nx + rotN * s.tx,
-      y: s.y + rotT * s.ny + rotN * s.ty,
-    });
+    data[i * 2] = s.x + rotT * s.nx + rotN * s.tx;
+    data[i * 2 + 1] = s.y + rotT * s.ny + rotN * s.ty;
   }
 
-  return points;
+  return { data, length: n };
 }
 
 // ── Crossing correction experiments (notes for future work) ──────────────────
