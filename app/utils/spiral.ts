@@ -110,16 +110,19 @@ function polarNode(angleFn: (a: number) => number, theta: number, total: number)
   const x = r * Math.cos(theta);
   const y = r * Math.sin(theta);
 
-  // Tangent approximation via small angular step
-  const dt = (2 * Math.PI / total) * KAPPA;
-  const rPrev = angleFn(theta - dt);
-  const rNext = angleFn(theta + dt);
-  const hix = rPrev * Math.cos(theta - dt);
-  const hiy = rPrev * Math.sin(theta - dt);
-  const hox = rNext * Math.cos(theta + dt);
-  const hoy = rNext * Math.sin(theta + dt);
+  // Numerical derivative dr/dθ
+  const eps = 1e-4;
+  const drdTheta = (angleFn(theta + eps) - angleFn(theta - eps)) / (2 * eps);
 
-  return shapeNode(x, y, hix, hiy, hox, hoy);
+  // Cartesian tangent: dx/dθ, dy/dθ
+  const dxdt = drdTheta * Math.cos(theta) - r * Math.sin(theta);
+  const dydt = drdTheta * Math.sin(theta) + r * Math.cos(theta);
+
+  // Handle length: segment angular span / 3 (standard cubic bezier approximation)
+  const segAngle = (2 * Math.PI) / total;
+  const hs = segAngle / 3;
+
+  return shapeNode(x, y, x - dxdt * hs, y - dydt * hs, x + dxdt * hs, y + dydt * hs);
 }
 
 /** Ellipse preset: ratio + orientation angle */
