@@ -13,7 +13,7 @@
  */
 
 import type { BezierSpiralConfig, PathSample, SpiralPointArray, DeformPoint } from "~/utils/spiral";
-import { sampleBezierPath, buildPropLUT, buildSpiralLUTs } from "~/utils/spiral";
+import { sampleBezierPath, buildSpiralLUTs } from "~/utils/spiral";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -170,10 +170,6 @@ export async function generateSpiralPointsGPU(
   const radiusLUT = luts.radius;
   const freqLUT = luts.frequency;
 
-  // Build elliptic and orientation LUTs
-  const ellipticLUT = buildPropLUT(config.elliptic);
-  const orientationLUT = buildPropLUT(config.orientation);
-
   // Pack samples into flat array: [x, y, tx, ty, nx, ny, t, pad] × n (vec4-aligned)
   const samplesData = new Float32Array(n * 8);
   for (let i = 0; i < n; i++) {
@@ -212,8 +208,6 @@ export async function generateSpiralPointsGPU(
   const samplesBuffer = createBuffer(device, samplesData, usage);
   const anglesBuffer = createBuffer(device, angles, usage);
   const radiusLUTBuffer = createBuffer(device, radiusLUT, usage);
-  const ellipticLUTBuffer = createBuffer(device, ellipticLUT, usage);
-  const orientationLUTBuffer = createBuffer(device, orientationLUT, usage);
   const deformMetaBuffer = createBuffer(device, deform.meta, usage);
   const deformNodesBuffer = createBuffer(device, deform.nodes, usage);
 
@@ -243,11 +237,9 @@ export async function generateSpiralPointsGPU(
       { binding: 1, resource: { buffer: samplesBuffer } },
       { binding: 2, resource: { buffer: anglesBuffer } },
       { binding: 3, resource: { buffer: radiusLUTBuffer } },
-      { binding: 4, resource: { buffer: ellipticLUTBuffer } },
-      { binding: 5, resource: { buffer: orientationLUTBuffer } },
-      { binding: 6, resource: { buffer: deformMetaBuffer } },
-      { binding: 7, resource: { buffer: deformNodesBuffer } },
-      { binding: 8, resource: { buffer: outputBuffer } },
+      { binding: 4, resource: { buffer: deformMetaBuffer } },
+      { binding: 5, resource: { buffer: deformNodesBuffer } },
+      { binding: 6, resource: { buffer: outputBuffer } },
     ],
   });
 
@@ -273,8 +265,6 @@ export async function generateSpiralPointsGPU(
   samplesBuffer.destroy();
   anglesBuffer.destroy();
   radiusLUTBuffer.destroy();
-  ellipticLUTBuffer.destroy();
-  orientationLUTBuffer.destroy();
   deformMetaBuffer.destroy();
   deformNodesBuffer.destroy();
   outputBuffer.destroy();
@@ -324,18 +314,16 @@ struct Uniforms {
 
 // Property LUTs (1024 floats each)
 @group(0) @binding(3) var<storage, read> radiusLUT: array<f32>;
-@group(0) @binding(4) var<storage, read> ellipticLUT: array<f32>;
-@group(0) @binding(5) var<storage, read> orientationLUT: array<f32>;
 
 // Deformation: meta header + per-point node data
 // Meta: [numPoints, 0, 0, 0] then per point [t, numNodes, 0, 0] (stride 4)
-@group(0) @binding(6) var<storage, read> deformMeta: array<f32>;
+@group(0) @binding(4) var<storage, read> deformMeta: array<f32>;
 // Nodes: MAX_DEFORM_POINTS × MAX_DEFORM_NODES × 8 floats
 // Per node: [x, y, hOutDx, hOutDy, hInDx, hInDy, pad, pad]
-@group(0) @binding(7) var<storage, read> deformNodes: array<f32>;
+@group(0) @binding(5) var<storage, read> deformNodes: array<f32>;
 
 // Output: [x, y] × N (stride = 2 floats)
-@group(0) @binding(8) var<storage, read_write> output: array<f32>;
+@group(0) @binding(6) var<storage, read_write> output: array<f32>;
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -343,7 +331,7 @@ const MAX_DEFORM_POINTS: u32 = 16u;
 const MAX_DEFORM_NODES:  u32 = 32u;
 const TWO_PI: f32 = 6.283185307179586;
 
-// ── LUT sampling (one function per LUT to avoid storage pointer params) ──────
+// ── LUT sampling ─────────────────────────────────────────────────────────────
 
 fn sampleRadius(t: f32) -> f32 {
   let fi = t * f32(u.lutSize - 1u);
@@ -351,22 +339,6 @@ fn sampleRadius(t: f32) -> f32 {
   if (i >= u.lutSize - 1u) { return radiusLUT[u.lutSize - 1u]; }
   let frac = fi - f32(i);
   return radiusLUT[i] + (radiusLUT[i + 1u] - radiusLUT[i]) * frac;
-}
-
-fn sampleElliptic(t: f32) -> f32 {
-  let fi = t * f32(u.lutSize - 1u);
-  let i = u32(fi);
-  if (i >= u.lutSize - 1u) { return ellipticLUT[u.lutSize - 1u]; }
-  let frac = fi - f32(i);
-  return ellipticLUT[i] + (ellipticLUT[i + 1u] - ellipticLUT[i]) * frac;
-}
-
-fn sampleOrientation(t: f32) -> f32 {
-  let fi = t * f32(u.lutSize - 1u);
-  let i = u32(fi);
-  if (i >= u.lutSize - 1u) { return orientationLUT[u.lutSize - 1u]; }
-  let frac = fi - f32(i);
-  return orientationLUT[i] + (orientationLUT[i + 1u] - orientationLUT[i]) * frac;
 }
 
 // ── Cubic bezier 1D ──────────────────────────────────────────────────────────
