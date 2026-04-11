@@ -723,7 +723,7 @@ const PRESETS: PresetDef[] = [
   {
     id: "ellipse", label: "Ellipse", icon: "i-mdi-ellipse-outline",
     sliders: [
-      { key: "ratio", label: "Ratio", min: 0.1, max: 3, step: 0.05, decimals: 2, default: 0.6 },
+      { key: "ratio", label: "Ratio", min: 0, max: 3, step: 0.05, decimals: 2, default: 0.6 },
       { key: "orient", label: "Orient°", min: 0, max: 360, step: 1, decimals: 0, default: 0 },
     ],
     generate: (p) => presetEllipse(p.ratio!, p.orient!),
@@ -765,7 +765,7 @@ const PRESETS: PresetDef[] = [
     id: "superellipse", label: "Super··", icon: "i-mdi-rounded-corner",
     sliders: [
       { key: "exp", label: "Exponent", min: 0.5, max: 4, step: 0.1, decimals: 1, default: 2.5 },
-      { key: "ratio", label: "Ratio", min: 0.1, max: 3, step: 0.05, decimals: 2, default: 1 },
+      { key: "ratio", label: "Ratio", min: 0, max: 3, step: 0.05, decimals: 2, default: 1 },
     ],
     generate: (p) => presetSuperellipse(p.exp!, p.ratio!),
   },
