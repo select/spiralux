@@ -112,7 +112,9 @@ export function useCanvasNavigation(options: CanvasNavOptions = {}) {
       panY.value -= (e.deltaX !== 0 ? e.deltaY : 0) * panSpeed;
     } else if (!scrollZoom) {
       // Default scroll = pan (when scrollZoom is off, i.e., main canvas)
-      panX.value -= e.deltaX * panSpeed;
+      // Horizontal tilt-wheel deltaX is typically much smaller than vertical deltaY,
+      // so boost it 3× to feel equally responsive.
+      panX.value -= e.deltaX * panSpeed * 3;
       panY.value -= e.deltaY * panSpeed;
     }
   }
