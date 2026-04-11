@@ -83,7 +83,7 @@ onUnmounted(() => window.removeEventListener("keydown", onKeydown));
       <!-- Compact thumbnails row — all in one flex-wrap row -->
       <div
         class="flex flex-wrap gap-1 transition-opacity duration-200"
-        :class="activePath.spiral.enabled ? 'opacity-100' : 'opacity-30 pointer-events-none'"
+        
       >
         <!-- Prop curve thumbnails -->
         <div
@@ -179,7 +179,7 @@ onUnmounted(() => window.removeEventListener("keydown", onKeydown));
       <!-- Editor body -->
       <div
         class="transition-opacity duration-200"
-        :class="activePath.spiral.enabled ? 'opacity-100' : 'opacity-30 pointer-events-none'"
+        
       >
         <!-- Prop curve editor -->
         <template v-if="expandedKey !== 'deformation'">
