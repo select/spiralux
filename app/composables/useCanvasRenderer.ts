@@ -96,8 +96,8 @@ export function drawPathSpiral(
   const radiusRatio = minRadius > 0.1 ? maxRadius / Math.max(minRadius, maxRadius * 0.2) : 5;
   // More samples when deformation shapes have many nodes (complex shapes need finer angular resolution)
   const maxDeformNodes = path.spiral.deformation?.reduce((mx, dp) => Math.max(mx, dp.nodes.length), 0) ?? 0;
-  const deformFactor = maxDeformNodes > 4 ? maxDeformNodes / 4 : 1;
-  const numSamples = Math.max(800, Math.min(80000, Math.round(pathLen * maxFreq * 0.5 * radiusRatio * deformFactor)));
+  const deformFactor = maxDeformNodes > 4 ? (maxDeformNodes / 4) ** 1.5 : 1;
+  const numSamples = Math.max(800, Math.min(120000, Math.round(pathLen * maxFreq * 1.0 * radiusRatio * deformFactor)));
   const samples = sampleBezierPath(path.nodes, path.closed, numSamples);
   const pts = generateSpiralPoints(samples, path.spiral);
   if (pts.length < 2) { ctx.globalCompositeOperation = prevComposite; return; }
