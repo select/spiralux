@@ -224,8 +224,8 @@ export async function generateSpiralPointsGPU(
     usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
   });
 
-  // Uniform: [numPoints, lutSize, 0, 0]
-  const uniforms = new Float32Array([n, PROP_LUT_SIZE, 0, 0]);
+  // Uniform: [numPoints, lutSize, 0, 0] — must be Uint32Array to match WGSL u32 layout
+  const uniforms = new Uint32Array([n, PROP_LUT_SIZE, 0, 0]);
   const uniformBuffer = createBuffer(device, uniforms, GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST);
 
   // ── Bind group ───────────────────────────────────────────────────────────
@@ -276,7 +276,7 @@ export async function generateSpiralPointsGPU(
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function createBuffer(device: GPUDevice, data: Float32Array, usage: GPUBufferUsageFlags): GPUBuffer {
+function createBuffer(device: GPUDevice, data: Float32Array | Uint32Array, usage: GPUBufferUsageFlags): GPUBuffer {
   const buffer = device.createBuffer({ size: data.byteLength, usage });
   device.queue.writeBuffer(buffer, 0, data);
   return buffer;
