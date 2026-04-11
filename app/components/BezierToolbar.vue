@@ -297,9 +297,9 @@ function onDragEnd() {
         <i class="i-mdi-delete-sweep text-lg" />
       </button>
 
-      <div class="divider" />
+      <div v-if="activeTool === 'node'" class="divider" />
 
-      <button class="tb" :class="{ 'tb-active': !showSpines }" data-tip="Hide/show spines (H)" @click="showSpines = !showSpines">
+      <button v-if="activeTool === 'node'" class="tb" :class="{ 'tb-active': !showSpines }" data-tip="Hide/show spines (H)" @click="showSpines = !showSpines">
         <i class="i-mdi-vector-curve text-lg" />
       </button>
 

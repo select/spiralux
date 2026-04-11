@@ -201,7 +201,7 @@ function _drawImmediate() {
   const view: CanvasView = { panX: panX.value, panY: panY.value, zoom: zoom.value };
 
   renderPaths(c, paths as unknown as Parameters<typeof renderPaths>[1], activePathIndex.value, view, {
-    showSpines: showSpines.value,
+    showSpines: activeTool.value === 'select' ? false : showSpines.value,
     blendMode: spiralBlendMode.value,
     selectedIds: selectedIds,
     hoveredId: hoveredId.value,
@@ -513,7 +513,7 @@ function onKeydown(e: KeyboardEvent) {
     case "Escape":
       deselectAll(); draw(); break;
     case "h": case "H":
-      if (!e.ctrlKey && !e.metaKey) { showSpines.value = !showSpines.value; draw(); }
+      if (!e.ctrlKey && !e.metaKey && activeTool.value === "node") { showSpines.value = !showSpines.value; draw(); }
       break;
     case "s":
       if (!e.ctrlKey && !e.metaKey) { activeTool.value = "select"; }
@@ -534,6 +534,7 @@ function fitCanvas() {
 watch(paths, () => draw(), { deep: true });
 watch(activePathIndex, () => draw());
 watch(showSpines, () => draw());
+watch(activeTool, () => draw());
 watch(spiralBlendMode, () => draw());
 watch(spiralCursorT, () => draw());
 
