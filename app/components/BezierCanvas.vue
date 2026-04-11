@@ -7,6 +7,7 @@ import { ref, onMounted, onUnmounted, watch, nextTick } from "vue";
 import type { BezierNode, BezierPath, Vec2 } from "~/composables/useBezierStore";
 import { renderPaths, drawPathCurves, drawPathSpiral, estimatePathLength } from "~/composables/useCanvasRenderer";
 import type { CanvasView } from "~/composables/useCanvasRenderer";
+import { setSpiralWorkerCallback } from "~/composables/useSpiralWorker";
 
 const {
   paths,
@@ -511,6 +512,8 @@ onMounted(() => {
   // Observe container resize (e.g. props panel expand/collapse)
   resizeObs = new ResizeObserver(() => fitCanvas());
   resizeObs.observe(canvasEl.value!.parentElement!);
+  // Trigger redraw when spiral worker completes async computation
+  setSpiralWorkerCallback(() => draw());
   draw();
 });
 

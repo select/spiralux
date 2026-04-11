@@ -414,6 +414,7 @@ function reconstructSpiralConfig(s: ProjectData["paths"][0]["spiral"]): BezierSp
 
 function projectToRenderPaths(proj: ProjectData): RenderablePath[] {
   return proj.paths.map(p => ({
+    id: p.id,
     nodes: p.nodes.map(n => ({ x: n.x, y: n.y, handleIn: { ...n.handleIn }, handleOut: { ...n.handleOut } })),
     closed: p.closed,
     color: p.color,

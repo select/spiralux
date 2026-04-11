@@ -4,11 +4,13 @@
  */
 import type { BezierNode, Vec2 } from "~/composables/useBezierStore";
 import type { BezierSpiralConfig } from "~/utils/spiral";
-import { sampleBezierPath, generateSpiralPoints, buildSpiralLUTs } from "~/utils/spiral";
+import { sampleBezierPath } from "~/utils/spiral";
+import { computeSpiral } from "~/composables/useSpiralWorker";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export interface RenderablePath {
+  id: string;
   nodes: { x: number; y: number; handleIn: Vec2; handleOut: Vec2 }[];
   closed: boolean;
   color: string;
@@ -98,9 +100,9 @@ export function drawPathSpiral(
   const maxDeformNodes = path.spiral.deformation?.reduce((mx, dp) => Math.max(mx, dp.nodes.length), 0) ?? 0;
   const deformFactor = maxDeformNodes > 4 ? (maxDeformNodes / 4) ** 1.5 : 1;
   const numSamples = Math.max(800, Math.min(120000, Math.round(pathLen * maxFreq * 1.0 * radiusRatio * deformFactor)));
-  const samples = sampleBezierPath(path.nodes, path.closed, numSamples);
-  const luts = buildSpiralLUTs(path.spiral);
-  const pts = generateSpiralPoints(samples, path.spiral, luts);
+
+  // Use worker-backed computation with cache
+  const pts = computeSpiral(path.id, path.nodes, path.closed, numSamples, path.spiral);
   if (pts.length < 2) { ctx.globalCompositeOperation = prevComposite; return; }
 
   ctx.beginPath();
