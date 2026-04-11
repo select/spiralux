@@ -304,6 +304,87 @@ export function sampleBezierPath(
 
 // ── Generate spiral points along a sampled path ──────────────────────────────
 
+// ── Deformation shape sampling ───────────────────────────────────────────────
+
+/** Evaluate cubic bezier at parameter t */
+function cubicBez(p0: number, p1: number, p2: number, p3: number, t: number): number {
+  const m = 1 - t;
+  return m * m * m * p0 + 3 * m * m * t * p1 + 3 * m * t * t * p2 + t * t * t * p3;
+}
+
+/**
+ * Sample a point on a closed bezier shape at a given angle (radians).
+ * The shape's natural parameter [0..1) maps linearly to [0..2π).
+ * Node 0 is at angle 0 (≈ "3 o'clock" on the default circle).
+ */
+function sampleDeformShape(nodes: DeformShapeNode[], angle: number): { x: number; y: number } {
+  const n = nodes.length;
+  if (n < 2) return { x: Math.cos(angle), y: Math.sin(angle) };
+
+  // Normalize angle to [0, 2π)
+  const TWO_PI = 2 * Math.PI;
+  let a = angle % TWO_PI;
+  if (a < 0) a += TWO_PI;
+
+  const u = a / TWO_PI;           // [0..1)
+  const segF = u * n;
+  const seg = Math.floor(segF) % n;
+  const lt = segF - Math.floor(segF); // local t within segment
+
+  const p0 = nodes[seg]!;
+  const p1 = nodes[(seg + 1) % n]!;
+
+  return {
+    x: cubicBez(p0.x, p0.x + p0.handleOut.dx, p1.x + p1.handleIn.dx, p1.x, lt),
+    y: cubicBez(p0.y, p0.y + p0.handleOut.dy, p1.y + p1.handleIn.dy, p1.y, lt),
+  };
+}
+
+/** Linearly interpolate two deform-shape node arrays (must have same length). */
+function lerpDeformNodes(a: DeformShapeNode[], b: DeformShapeNode[], blend: number): DeformShapeNode[] {
+  if (a.length !== b.length) return blend < 0.5 ? a : b;
+  const m = 1 - blend;
+  return a.map((na, i) => {
+    const nb = b[i]!;
+    return {
+      id: na.id,
+      x: na.x * m + nb.x * blend,
+      y: na.y * m + nb.y * blend,
+      handleIn:  { dx: na.handleIn.dx  * m + nb.handleIn.dx  * blend, dy: na.handleIn.dy  * m + nb.handleIn.dy  * blend },
+      handleOut: { dx: na.handleOut.dx * m + nb.handleOut.dx * blend, dy: na.handleOut.dy * m + nb.handleOut.dy * blend },
+    };
+  });
+}
+
+/**
+ * Get the interpolated deformation shape at a given backbone-t.
+ * Finds the two bracketing DeformPoints and lerps between them.
+ * Returns null when deformation array is empty / undefined.
+ */
+function getDeformShapeAtT(deformation: DeformPoint[] | undefined, t: number): DeformShapeNode[] | null {
+  if (!deformation || deformation.length === 0) return null;
+  if (deformation.length === 1) return deformation[0]!.nodes;
+
+  // Clamp to first/last
+  if (t <= deformation[0]!.t) return deformation[0]!.nodes;
+  const last = deformation[deformation.length - 1]!;
+  if (t >= last.t) return last.nodes;
+
+  // Find bracketing pair
+  for (let i = 0; i < deformation.length - 1; i++) {
+    const a = deformation[i]!;
+    const b = deformation[i + 1]!;
+    if (t >= a.t && t <= b.t) {
+      const span = b.t - a.t;
+      const blend = span > 0 ? (t - a.t) / span : 0;
+      return lerpDeformNodes(a.nodes, b.nodes, blend);
+    }
+  }
+  return last.nodes;
+}
+
+// ── Spiral generation ────────────────────────────────────────────────────────
+
 export function generateSpiralPoints(
   samples: PathSample[],
   config: BezierSpiralConfig,
@@ -312,14 +393,13 @@ export function generateSpiralPoints(
 
   const points: Vec2[] = [];
   let cumulativeAngle = 0;
+  const hasDeform = config.deformation && config.deformation.length > 0;
 
   for (let i = 0; i < samples.length; i++) {
     const s = samples[i]!;
     const t = s.t;
 
     const radius = evaluatePropCurve(config.radius, t);
-    const elliptic = evaluatePropCurve(config.elliptic, t);
-    const orientDeg = evaluatePropCurve(config.orientation, t);
     const freq = evaluatePropCurve(config.frequency, t);
 
     if (i > 0) {
@@ -330,20 +410,29 @@ export function generateSpiralPoints(
       cumulativeAngle += freq * ds * 0.05;
     }
 
-    // Elliptic spiral in local tangent/normal frame, rotated by orientation
-    const sinA = Math.sin(cumulativeAngle);
-    const cosA = Math.cos(cumulativeAngle);
+    let rotT: number;
+    let rotN: number;
 
-    // Local frame: tangent = cos axis, normal = sin axis; elliptic scales one axis
-    let localT = radius * cosA;
-    let localN = radius * elliptic * sinA;
-
-    // Rotate by orientation angle
-    const orientRad = (orientDeg * Math.PI) / 180;
-    const cosO = Math.cos(orientRad);
-    const sinO = Math.sin(orientRad);
-    const rotT = localT * cosO - localN * sinO;
-    const rotN = localT * sinO + localN * cosO;
+    if (hasDeform) {
+      // Deformation shape replaces elliptic + orientation
+      const shape = getDeformShapeAtT(config.deformation, t)!;
+      const pt = sampleDeformShape(shape, cumulativeAngle);
+      rotT = radius * pt.x;
+      rotN = radius * pt.y;
+    } else {
+      // Legacy: elliptic + orientation property curves
+      const elliptic = evaluatePropCurve(config.elliptic, t);
+      const orientDeg = evaluatePropCurve(config.orientation, t);
+      const sinA = Math.sin(cumulativeAngle);
+      const cosA = Math.cos(cumulativeAngle);
+      let localT = radius * cosA;
+      let localN = radius * elliptic * sinA;
+      const orientRad = (orientDeg * Math.PI) / 180;
+      const cosO = Math.cos(orientRad);
+      const sinO = Math.sin(orientRad);
+      rotT = localT * cosO - localN * sinO;
+      rotN = localT * sinO + localN * cosO;
+    }
 
     // Transform to world space
     points.push({
