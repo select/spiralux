@@ -978,17 +978,8 @@ function downloadSVG() {
   // Embed full project data so the file is self-contained and re-importable
   const projectJson = JSON.stringify(exportProject());
   svg += `  <metadata><spiralux-data>${projectJson}</spiralux-data></metadata>\n`;
-  svg += `  <rect x="${vx}" y="${vy}" width="${vw}" height="${vh}" fill="#0f0f1a"/>\n`;
 
-  // Spines
-  if (showSpines.value) {
-    for (const pd of pathData) {
-      if (pd.spineD) {
-        svg += `  <!-- spine: ${pd.name} -->\n`;
-        svg += `  <path d="${pd.spineD}" fill="none" stroke="${pd.color}" stroke-width="1.5" stroke-opacity="0.5"/>\n`;
-      }
-    }
-  }
+  // Spines intentionally omitted from SVG export
 
   // Spirals — blend modes that add light work in SVG; perceptual modes (hue/saturation/color/luminosity)
   // are invisible on dark backgrounds so we only apply supported compositing modes.
