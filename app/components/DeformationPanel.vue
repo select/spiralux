@@ -244,6 +244,9 @@ const shapeScale = computed(() => BASE_SHAPE_SCALE * shapeZoom.value);
 
 const selectedShapeNodeIdx = ref<number>(-1);
 
+/** Tracks the current mouse position during rotation drag for visual feedback */
+const rotatingMousePos = ref<{ x: number; y: number } | null>(null);
+
 function shapeToCanvas(x: number, y: number): { cx: number; cy: number } {
   return { cx: SHAPE_CX + x * shapeScale.value, cy: SHAPE_CY + y * shapeScale.value };
 }
@@ -351,6 +354,26 @@ function drawShape() {
     ctx.lineWidth = isSelected ? 2 : 1.2;
     ctx.stroke();
   }
+
+  // Rotation indicator (visible during alt+drag)
+  if (rotatingMousePos.value) {
+    const mx = rotatingMousePos.value.x;
+    const my = rotatingMousePos.value.y;
+    ctx.beginPath();
+    ctx.moveTo(SHAPE_CX, SHAPE_CY);
+    ctx.lineTo(mx, my);
+    ctx.strokeStyle = "rgba(168,85,247,0.6)";
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 3]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Small circle at center
+    ctx.beginPath();
+    ctx.arc(SHAPE_CX, SHAPE_CY, 3, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(168,85,247,0.8)";
+    ctx.fill();
+  }
 }
 
 // Shape editor hit testing
@@ -404,7 +427,11 @@ function hitShapeSegment(mx: number, my: number): number {
 }
 
 // Shape editor drag state
-type ShapeDrag = null | { kind: "node"; idx: number } | { kind: "handleIn"; idx: number } | { kind: "handleOut"; idx: number };
+type ShapeDrag = null
+  | { kind: "node"; idx: number }
+  | { kind: "handleIn"; idx: number }
+  | { kind: "handleOut"; idx: number }
+  | { kind: "rotate"; startAngle: number };
 let shapeDrag: ShapeDrag = null;
 
 function getShapePos(e: MouseEvent) {
@@ -415,6 +442,14 @@ function getShapePos(e: MouseEvent) {
 function onShapeDown(e: MouseEvent) {
   if (e.button !== 0 || !selectedPoint.value) return;
   const { x, y } = getShapePos(e);
+
+  // Alt+click on empty area → start rotation
+  if (e.altKey) {
+    const angle = Math.atan2(y - SHAPE_CY, x - SHAPE_CX);
+    pushUndo();
+    shapeDrag = { kind: "rotate", startAngle: angle };
+    return;
+  }
 
   // Hit handle first (only if a node is selected)
   const hh = hitShapeHandle(x, y);
@@ -501,7 +536,30 @@ function onShapeMove(e: MouseEvent) {
   const { x, y } = getShapePos(e);
   const nodes = selectedPoint.value.nodes;
 
-  if (shapeDrag.kind === "node") {
+  if (shapeDrag.kind === "rotate") {
+    rotatingMousePos.value = { x, y };
+    const curAngle = Math.atan2(y - SHAPE_CY, x - SHAPE_CX);
+    const delta = curAngle - shapeDrag.startAngle;
+    shapeDrag.startAngle = curAngle;
+    const cosD = Math.cos(delta);
+    const sinD = Math.sin(delta);
+    for (const n of nodes) {
+      // Rotate node position around origin
+      const rx = n.x * cosD - n.y * sinD;
+      const ry = n.x * sinD + n.y * cosD;
+      n.x = rx;
+      n.y = ry;
+      // Rotate handles
+      const hix = n.handleIn.dx * cosD - n.handleIn.dy * sinD;
+      const hiy = n.handleIn.dx * sinD + n.handleIn.dy * cosD;
+      n.handleIn.dx = hix;
+      n.handleIn.dy = hiy;
+      const hox = n.handleOut.dx * cosD - n.handleOut.dy * sinD;
+      const hoy = n.handleOut.dx * sinD + n.handleOut.dy * cosD;
+      n.handleOut.dx = hox;
+      n.handleOut.dy = hoy;
+    }
+  } else if (shapeDrag.kind === "node") {
     const n = nodes[shapeDrag.idx]!;
     const pos = canvasToShape(x, y);
     n.x = pos.x;
@@ -529,6 +587,9 @@ function onShapeMove(e: MouseEvent) {
 }
 
 function onShapeUp() {
+  if (shapeDrag?.kind === "rotate") {
+    rotatingMousePos.value = null;
+  }
   shapeDrag = null;
 }
 
@@ -577,7 +638,8 @@ function onShapeHover(e: MouseEvent) {
   if (shapeDrag || !shapeEl.value) return;
   const { x, y } = getShapePos(e);
   const el = shapeEl.value;
-  if (hitShapeHandle(x, y)) el.style.cursor = "pointer";
+  if (e.altKey) el.style.cursor = "grab";
+  else if (hitShapeHandle(x, y)) el.style.cursor = "pointer";
   else if (hitShapeNode(x, y) >= 0) el.style.cursor = "grab";
   else if (hitShapeSegment(x, y) >= 0) el.style.cursor = "copy";
   else el.style.cursor = "default";
@@ -838,7 +900,7 @@ watch(selectedIdx, () => { activePresetId.value = null; });
         <span
           class="text-[9px] text-muted px-1 transition-opacity duration-150"
           :style="{ visibility: selectedPoint ? 'visible' : 'hidden' }"
-        >drag nodes · click curve to add · shift for asymmetric</span>
+        >drag nodes · click curve to add · shift for asymmetric · alt+drag to rotate</span>
         </div>
       </div>
     </div>
