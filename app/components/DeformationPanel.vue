@@ -266,7 +266,8 @@ function onShapeWheel(e: WheelEvent) {
   const rect = shapeEl.value!.getBoundingClientRect();
   const cx = e.clientX - rect.left;
   const cy = e.clientY - rect.top;
-  shapeNav.onWheel(e, cx, cy);
+  // Subtract fixed center offset so zoom pivots around cursor correctly
+  shapeNav.onWheel(e, cx - SHAPE_SIZE / 2, cy - SHAPE_SIZE / 2);
   drawShape();
 }
 
