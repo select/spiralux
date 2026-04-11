@@ -77,6 +77,17 @@ async function ensurePipeline(): Promise<{ device: GPUDevice; pipeline: GPUCompu
 
   if (!_pipeline) {
     const module = device.createShaderModule({ code: SPIRAL_WGSL });
+    // Check for shader compilation errors
+    if (module.getCompilationInfo) {
+      const info = await module.getCompilationInfo();
+      const errors = info.messages.filter(m => m.type === "error");
+      if (errors.length > 0) {
+        console.error("[SpiralGPU] WGSL compilation errors:", errors.map(e =>
+          `line ${e.lineNum}:${e.linePos}: ${e.message}`
+        ).join("\n"));
+        return null;
+      }
+    }
     _pipeline = device.createComputePipeline({
       layout: "auto",
       compute: { module, entryPoint: "main" },
@@ -332,14 +343,30 @@ const MAX_DEFORM_POINTS: u32 = 16u;
 const MAX_DEFORM_NODES:  u32 = 32u;
 const TWO_PI: f32 = 6.283185307179586;
 
-// ── LUT sampling ─────────────────────────────────────────────────────────────
+// ── LUT sampling (one function per LUT to avoid storage pointer params) ──────
 
-fn sampleLUT(lut: ptr<storage, array<f32>, read>, t: f32, lutSize: u32) -> f32 {
-  let fi = t * f32(lutSize - 1u);
+fn sampleRadius(t: f32) -> f32 {
+  let fi = t * f32(u.lutSize - 1u);
   let i = u32(fi);
-  if (i >= lutSize - 1u) { return (*lut)[lutSize - 1u]; }
+  if (i >= u.lutSize - 1u) { return radiusLUT[u.lutSize - 1u]; }
   let frac = fi - f32(i);
-  return (*lut)[i] + ((*lut)[i + 1u] - (*lut)[i]) * frac;
+  return radiusLUT[i] + (radiusLUT[i + 1u] - radiusLUT[i]) * frac;
+}
+
+fn sampleElliptic(t: f32) -> f32 {
+  let fi = t * f32(u.lutSize - 1u);
+  let i = u32(fi);
+  if (i >= u.lutSize - 1u) { return ellipticLUT[u.lutSize - 1u]; }
+  let frac = fi - f32(i);
+  return ellipticLUT[i] + (ellipticLUT[i + 1u] - ellipticLUT[i]) * frac;
+}
+
+fn sampleOrientation(t: f32) -> f32 {
+  let fi = t * f32(u.lutSize - 1u);
+  let i = u32(fi);
+  if (i >= u.lutSize - 1u) { return orientationLUT[u.lutSize - 1u]; }
+  let frac = fi - f32(i);
+  return orientationLUT[i] + (orientationLUT[i + 1u] - orientationLUT[i]) * frac;
 }
 
 // ── Cubic bezier 1D ──────────────────────────────────────────────────────────
@@ -369,7 +396,6 @@ fn sampleDeformShape(pointIdx: u32, numNodes: u32, angle: f32) -> vec2<f32> {
   let i0 = nodeBase + seg * 8u;
   let i1 = nodeBase + ((seg + 1u) % numNodes) * 8u;
 
-  // p0: [x, y, hOutDx, hOutDy, hInDx, hInDy, ...]
   let p0x = deformNodes[i0];
   let p0y = deformNodes[i0 + 1u];
   let p0hox = deformNodes[i0 + 2u];
@@ -382,7 +408,7 @@ fn sampleDeformShape(pointIdx: u32, numNodes: u32, angle: f32) -> vec2<f32> {
 
   return vec2<f32>(
     cubicBez(p0x, p0x + p0hox, p1x + p1hix, p1x, lt),
-    cubicBez(p0y, p0y + p0hoy, p1y + p1hiy, p1y, lt),
+    cubicBez(p0y, p0y + p0hoy, p1y + p1hiy, p1y, lt)
   );
 }
 
@@ -392,7 +418,6 @@ fn sampleDeformAtT(t: f32, angle: f32) -> vec2<f32> {
   let numPts = u32(deformMeta[0]);
 
   if (numPts == 0u) {
-    // No deformation — fall back to circle
     return vec2<f32>(cos(angle), sin(angle));
   }
 
@@ -401,14 +426,12 @@ fn sampleDeformAtT(t: f32, angle: f32) -> vec2<f32> {
     return sampleDeformShape(0u, nn, angle);
   }
 
-  // Clamp to first
   let firstT = deformMeta[4u];
   let firstN = u32(deformMeta[4u + 1u]);
   if (t <= firstT) {
     return sampleDeformShape(0u, firstN, angle);
   }
 
-  // Clamp to last
   let lastIdx = numPts - 1u;
   let lastT = deformMeta[4u + lastIdx * 4u];
   let lastN = u32(deformMeta[4u + lastIdx * 4u + 1u]);
@@ -422,13 +445,14 @@ fn sampleDeformAtT(t: f32, angle: f32) -> vec2<f32> {
     let bT = deformMeta[4u + (i + 1u) * 4u];
     if (t >= aT && t <= bT) {
       let span = bT - aT;
-      var blend = 0.0;
+      var blend: f32 = 0.0;
       if (span > 0.0) { blend = (t - aT) / span; }
       let aN = u32(deformMeta[4u + i * 4u + 1u]);
       let bN = u32(deformMeta[4u + (i + 1u) * 4u + 1u]);
       let pa = sampleDeformShape(i, aN, angle);
       let pb = sampleDeformShape(i + 1u, bN, angle);
-      return mix(pa, pb, blend);
+      let m = 1.0 - blend;
+      return vec2<f32>(pa.x * m + pb.x * blend, pa.y * m + pb.y * blend);
     }
   }
 
@@ -452,7 +476,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   let t   = samples[base + 6u];
 
   let angle  = angles[idx];
-  let radius = sampleLUT(&radiusLUT, t, u.lutSize);
+  let radius = sampleRadius(t);
 
   let deformPt = sampleDeformAtT(t, angle);
 
