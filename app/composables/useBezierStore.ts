@@ -4,7 +4,7 @@
  */
 import { reactive, ref, computed } from "vue";
 import { useStorage } from "@vueuse/core";
-import type { BezierSpiralConfig, PropCurve, PropNode, DeformPoint, DeformShapeNode } from "~/utils/spiral";
+import type { BezierSpiralConfig, PropCurve, DeformPoint } from "~/utils/spiral";
 import { defaultBezierSpiralConfig, propUid, bumpPropId, sampleBezierPath, generateSpiralPoints, makeDeformPoint } from "~/utils/spiral";
 
 // ── Data model ───────────────────────────────────────────────────────────────

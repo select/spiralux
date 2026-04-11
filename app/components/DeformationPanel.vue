@@ -232,21 +232,31 @@ let shapeCtx: CanvasRenderingContext2D | null = null;
 
 const SHAPE_SIZE = 240;
 const SHAPE_PAD = 20;
-const SHAPE_SCALE = (SHAPE_SIZE - SHAPE_PAD * 2) / 2.8; // maps ±1.4 to canvas
+const BASE_SHAPE_SCALE = (SHAPE_SIZE - SHAPE_PAD * 2) / 2.8; // maps ±1.4 to canvas at zoom=1
 const SHAPE_CX = SHAPE_SIZE / 2;
 const SHAPE_CY = SHAPE_SIZE / 2;
 const SHAPE_NODE_R = 7;
 const SHAPE_HANDLE_R = 5;
 const SHAPE_HIT_R = 12;
 
+const shapeZoom = ref(1);
+const shapeScale = computed(() => BASE_SHAPE_SCALE * shapeZoom.value);
+
 const selectedShapeNodeIdx = ref<number>(-1);
 
 function shapeToCanvas(x: number, y: number): { cx: number; cy: number } {
-  return { cx: SHAPE_CX + x * SHAPE_SCALE, cy: SHAPE_CY + y * SHAPE_SCALE };
+  return { cx: SHAPE_CX + x * shapeScale.value, cy: SHAPE_CY + y * shapeScale.value };
 }
 
 function canvasToShape(cx: number, cy: number): { x: number; y: number } {
-  return { x: (cx - SHAPE_CX) / SHAPE_SCALE, y: (cy - SHAPE_CY) / SHAPE_SCALE };
+  return { x: (cx - SHAPE_CX) / shapeScale.value, y: (cy - SHAPE_CY) / shapeScale.value };
+}
+
+function onShapeWheel(e: WheelEvent) {
+  e.preventDefault();
+  const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+  shapeZoom.value = Math.max(0.1, Math.min(10, shapeZoom.value * factor));
+  drawShape();
 }
 
 function drawShape() {
@@ -265,9 +275,9 @@ function drawShape() {
   ctx.strokeStyle = "rgba(255,255,255,0.06)";
   ctx.lineWidth = 0.5;
   for (let i = -2; i <= 2; i++) {
-    const gx = SHAPE_CX + i * SHAPE_SCALE * 0.5;
+    const gx = SHAPE_CX + i * shapeScale.value * 0.5;
     ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, SHAPE_SIZE); ctx.stroke();
-    const gy = SHAPE_CY + i * SHAPE_SCALE * 0.5;
+    const gy = SHAPE_CY + i * shapeScale.value * 0.5;
     ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(SHAPE_SIZE, gy); ctx.stroke();
   }
 
@@ -281,7 +291,7 @@ function drawShape() {
 
   // Reference unit circle (faint)
   ctx.beginPath();
-  ctx.arc(SHAPE_CX, SHAPE_CY, SHAPE_SCALE, 0, Math.PI * 2);
+  ctx.arc(SHAPE_CX, SHAPE_CY, shapeScale.value, 0, Math.PI * 2);
   ctx.strokeStyle = "rgba(255,255,255,0.08)";
   ctx.lineWidth = 1;
   ctx.setLineDash([3, 4]);
@@ -290,7 +300,7 @@ function drawShape() {
 
   // Draw closed shape
   if (nodes.length >= 2) {
-    traceShape(ctx, nodes, SHAPE_CX, SHAPE_CY, SHAPE_SCALE);
+    traceShape(ctx, nodes, SHAPE_CX, SHAPE_CY, shapeScale.value);
     ctx.strokeStyle = "#a855f7";
     ctx.lineWidth = 2;
     ctx.stroke();
@@ -306,10 +316,10 @@ function drawShape() {
 
     // Handles (selected node only)
     if (isSelected) {
-      const hiX = nx + n.handleIn.dx * SHAPE_SCALE;
-      const hiY = ny + n.handleIn.dy * SHAPE_SCALE;
-      const hoX = nx + n.handleOut.dx * SHAPE_SCALE;
-      const hoY = ny + n.handleOut.dy * SHAPE_SCALE;
+      const hiX = nx + n.handleIn.dx * shapeScale.value;
+      const hiY = ny + n.handleIn.dy * shapeScale.value;
+      const hoX = nx + n.handleOut.dx * shapeScale.value;
+      const hoY = ny + n.handleOut.dy * shapeScale.value;
 
       ctx.beginPath();
       ctx.moveTo(hiX, hiY);
@@ -362,11 +372,11 @@ function hitShapeHandle(mx: number, my: number): { idx: number; which: "in" | "o
 
   const n = nodes[selIdx]!;
   const { cx: nx, cy: ny } = shapeToCanvas(n.x, n.y);
-  const hoX = nx + n.handleOut.dx * SHAPE_SCALE;
-  const hoY = ny + n.handleOut.dy * SHAPE_SCALE;
+  const hoX = nx + n.handleOut.dx * shapeScale.value;
+  const hoY = ny + n.handleOut.dy * shapeScale.value;
   if ((hoX - mx) ** 2 + (hoY - my) ** 2 < SHAPE_HIT_R * SHAPE_HIT_R) return { idx: selIdx, which: "out" };
-  const hiX = nx + n.handleIn.dx * SHAPE_SCALE;
-  const hiY = ny + n.handleIn.dy * SHAPE_SCALE;
+  const hiX = nx + n.handleIn.dx * shapeScale.value;
+  const hiY = ny + n.handleIn.dy * shapeScale.value;
   if ((hiX - mx) ** 2 + (hiY - my) ** 2 < SHAPE_HIT_R * SHAPE_HIT_R) return { idx: selIdx, which: "in" };
   return null;
 }
@@ -499,8 +509,8 @@ function onShapeMove(e: MouseEvent) {
   } else {
     const n = nodes[shapeDrag.idx]!;
     const { cx: nx, cy: ny } = shapeToCanvas(n.x, n.y);
-    const dx = (x - nx) / SHAPE_SCALE;
-    const dy = (y - ny) / SHAPE_SCALE;
+    const dx = (x - nx) / shapeScale.value;
+    const dy = (y - ny) / shapeScale.value;
 
     if (shapeDrag.kind === "handleOut") {
       n.handleOut = { dx, dy };
@@ -578,6 +588,7 @@ function onShapeHover(e: MouseEvent) {
 watch(deformation, () => { drawTravel(); drawShape(); }, { deep: true });
 watch(selectedPoint, () => {
   selectedShapeNodeIdx.value = -1;
+  shapeZoom.value = 1;
   nextTick(fitShapeCanvas);
 });
 
@@ -682,6 +693,7 @@ onUnmounted(() => {
           @mousemove="onShapeHover"
           @dblclick="onShapeDblClick"
           @contextmenu="onShapeContextMenu"
+          @wheel.prevent="onShapeWheel"
         />
 
         <!-- Help text: visible only when a point is selected -->
