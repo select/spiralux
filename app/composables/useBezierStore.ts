@@ -799,6 +799,16 @@ function importProject(data: ProjectData) {
         id: dp.id, t: dp.t,
         nodes: dp.nodes.map(n => ({ id: n.id, x: n.x, y: n.y, handleIn: { ...n.handleIn }, handleOut: { ...n.handleOut } })),
       }));
+    } else {
+      // Legacy project: synthesise deformation points from elliptic + orientation curves.
+      // Sample at t=0 and t=1 (covers constant curves); if either curve has interior
+      // nodes also sample at each of their t positions so the shape matches exactly.
+      const tSet = new Set<number>([0, 1]);
+      for (const key of ["elliptic", "orientation"] as const) {
+        for (const n of sp[key].nodes) tSet.add(Math.max(0, Math.min(1, n.t)));
+      }
+      const tVals = Array.from(tSet).sort((a, b) => a - b);
+      sp.deformation = tVals.map(t => makeDeformPoint(sp, t));
     }
     const p: BezierPath = reactive({
       id: ps.id,
