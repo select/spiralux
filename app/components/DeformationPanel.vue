@@ -9,7 +9,7 @@
  *     deformation points, shape bezier editor on the right.
  */
 import type { DeformPoint, DeformShapeNode } from "~/utils/spiral";
-import { propUid, makeDeformPoint } from "~/utils/spiral";
+import { propUid, makeDeformPoint, presetEllipse, presetSine, presetStar, presetPolygon, presetRose, presetSuperellipse } from "~/utils/spiral";
 
 const props = defineProps<{ expanded?: boolean }>();
 
@@ -627,6 +627,102 @@ onUnmounted(() => {
   window.removeEventListener("mousemove", onShapeMove);
   window.removeEventListener("mouseup", onShapeUp);
 });
+
+// ── Preset deformation shapes ─────────────────────────────────────────────────────
+
+interface PresetDef {
+  id: string;
+  label: string;
+  icon: string;
+  sliders: { key: string; label: string; min: number; max: number; step: number; decimals?: number; default: number }[];
+  generate: (params: Record<string, number>) => DeformShapeNode[];
+}
+
+const PRESETS: PresetDef[] = [
+  {
+    id: "ellipse", label: "Ellipse", icon: "i-mdi-ellipse-outline",
+    sliders: [
+      { key: "ratio", label: "Ratio", min: 0.1, max: 3, step: 0.05, decimals: 2, default: 0.6 },
+      { key: "orient", label: "Orient°", min: 0, max: 360, step: 1, decimals: 0, default: 0 },
+    ],
+    generate: (p) => presetEllipse(p.ratio!, p.orient!),
+  },
+  {
+    id: "sine", label: "Sine", icon: "i-mdi-sine-wave",
+    sliders: [
+      { key: "freq", label: "Frequency", min: 1, max: 12, step: 1, decimals: 0, default: 3 },
+      { key: "amp", label: "Amplitude", min: 0, max: 1, step: 0.02, decimals: 2, default: 0.3 },
+      { key: "phase", label: "Phase°", min: 0, max: 360, step: 1, decimals: 0, default: 0 },
+    ],
+    generate: (p) => presetSine(p.freq!, p.amp!, p.phase!),
+  },
+  {
+    id: "star", label: "Star", icon: "i-mdi-star-outline",
+    sliders: [
+      { key: "points", label: "Points", min: 3, max: 12, step: 1, decimals: 0, default: 5 },
+      { key: "depth", label: "Depth", min: 0, max: 0.9, step: 0.02, decimals: 2, default: 0.4 },
+    ],
+    generate: (p) => presetStar(p.points!, p.depth!),
+  },
+  {
+    id: "polygon", label: "Polygon", icon: "i-mdi-hexagon-outline",
+    sliders: [
+      { key: "sides", label: "Sides", min: 3, max: 8, step: 1, decimals: 0, default: 6 },
+      { key: "rounding", label: "Rounding", min: 0, max: 1, step: 0.02, decimals: 2, default: 0.3 },
+    ],
+    generate: (p) => presetPolygon(p.sides!, p.rounding!),
+  },
+  {
+    id: "rose", label: "Rose", icon: "i-mdi-flower-outline",
+    sliders: [
+      { key: "petals", label: "Petals", min: 2, max: 8, step: 1, decimals: 0, default: 4 },
+      { key: "depth", label: "Depth", min: 0, max: 1, step: 0.02, decimals: 2, default: 0.4 },
+    ],
+    generate: (p) => presetRose(p.petals!, p.depth!),
+  },
+  {
+    id: "superellipse", label: "Super··", icon: "i-mdi-rounded-corner",
+    sliders: [
+      { key: "exp", label: "Exponent", min: 0.5, max: 4, step: 0.1, decimals: 1, default: 2.5 },
+      { key: "ratio", label: "Ratio", min: 0.1, max: 3, step: 0.05, decimals: 2, default: 1 },
+    ],
+    generate: (p) => presetSuperellipse(p.exp!, p.ratio!),
+  },
+];
+
+const activePresetId = ref<string | null>(null);
+const presetParams = reactive<Record<string, number>>({});
+
+const activePreset = computed(() => PRESETS.find(p => p.id === activePresetId.value) ?? null);
+
+function selectPreset(preset: PresetDef) {
+  activePresetId.value = preset.id;
+  // Init default slider values
+  for (const s of preset.sliders) {
+    if (!(s.key in presetParams)) presetParams[s.key] = s.default;
+    else presetParams[s.key] = s.default;
+  }
+  applyPreset();
+}
+
+function applyPreset() {
+  const preset = activePreset.value;
+  if (!preset || !selectedPoint.value) return;
+  pushUndo();
+  const newNodes = preset.generate(presetParams);
+  selectedPoint.value.nodes.splice(0, selectedPoint.value.nodes.length, ...newNodes);
+  selectedShapeNodeIdx.value = -1;
+  drawShape();
+  drawTravel();
+}
+
+function onPresetSliderUpdate(key: string, val: number) {
+  presetParams[key] = val;
+  applyPreset();
+}
+
+// Reset preset when switching deformation points
+watch(selectedIdx, () => { activePresetId.value = null; });
 </script>
 
 <template>
@@ -654,11 +750,53 @@ onUnmounted(() => {
         <span class="text-[9px] text-muted px-1">click to add · dbl-click to remove · drag to move</span>
       </div>
 
-      <!-- Shape editor column — always reserves fixed space -->
+      <!-- Shape editor + preset column — always reserves fixed space -->
       <div
-        class="shrink-0 flex flex-col gap-1"
-        :style="{ width: SHAPE_SIZE + 'px' }"
+        class="shrink-0 flex gap-2"
+        :style="{ minHeight: (SHAPE_SIZE + 40) + 'px' }"
       >
+        <!-- Preset column -->
+        <div
+          class="flex flex-col gap-1 w-[140px] shrink-0 transition-opacity duration-150 overflow-y-auto"
+          :style="{ visibility: selectedPoint ? 'visible' : 'hidden', opacity: selectedPoint ? 1 : 0 }"
+        >
+          <span class="text-[9px] font-semibold text-muted uppercase tracking-wide px-0.5">Presets</span>
+          <!-- Preset buttons -->
+          <div class="flex flex-wrap gap-0.5">
+            <button
+              v-for="preset in PRESETS"
+              :key="preset.id"
+              class="flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] transition-colors cursor-pointer"
+              :class="activePresetId === preset.id ? 'bg-[#a855f7]/20 text-[#a855f7]' : 'text-muted hover:text-primary hover:bg-elevated/40'"
+              @click="selectPreset(preset)"
+            >
+              <i :class="preset.icon" class="text-xs" />
+              {{ preset.label }}
+            </button>
+          </div>
+          <!-- Sliders for active preset -->
+          <template v-if="activePreset">
+            <div class="flex flex-col gap-2 mt-1">
+              <SliderField
+                v-for="s in activePreset.sliders"
+                :key="s.key"
+                :label="s.label"
+                :min="s.min"
+                :max="s.max"
+                :step="s.step"
+                :decimals="s.decimals ?? 2"
+                :model-value="presetParams[s.key] ?? s.default"
+                @update:model-value="onPresetSliderUpdate(s.key, $event)"
+              />
+            </div>
+          </template>
+        </div>
+
+        <!-- Shape canvas column -->
+        <div
+          class="shrink-0 flex flex-col gap-1"
+          :style="{ width: SHAPE_SIZE + 'px' }"
+        >
         <!-- Header: visible only when a point is selected -->
         <div
           class="flex items-center gap-1 px-1 transition-opacity duration-150"
@@ -701,6 +839,7 @@ onUnmounted(() => {
           class="text-[9px] text-muted px-1 transition-opacity duration-150"
           :style="{ visibility: selectedPoint ? 'visible' : 'hidden' }"
         >drag nodes · click curve to add · shift for asymmetric</span>
+        </div>
       </div>
     </div>
   </template>

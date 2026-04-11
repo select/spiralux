@@ -97,6 +97,158 @@ export function makeDeformPoint(config: BezierSpiralConfig, t: number): DeformPo
   return { id: propUid(), t, nodes: makeDeformShape(config, t) };
 }
 
+// ── Preset deformation shapes ────────────────────────────────────────────────
+
+/** Helper: create a DeformShapeNode from absolute position + absolute handle positions */
+function shapeNode(x: number, y: number, hix: number, hiy: number, hox: number, hoy: number): DeformShapeNode {
+  return { id: propUid(), x, y, handleIn: { dx: hix - x, dy: hiy - y }, handleOut: { dx: hox - x, dy: hoy - y } };
+}
+
+/** Helper: create smooth node on a polar curve at angle θ with smooth bezier handles */
+function polarNode(angleFn: (a: number) => number, theta: number, total: number): DeformShapeNode {
+  const r = angleFn(theta);
+  const x = r * Math.cos(theta);
+  const y = r * Math.sin(theta);
+
+  // Tangent approximation via small angular step
+  const dt = (2 * Math.PI / total) * KAPPA;
+  const rPrev = angleFn(theta - dt);
+  const rNext = angleFn(theta + dt);
+  const hix = rPrev * Math.cos(theta - dt);
+  const hiy = rPrev * Math.sin(theta - dt);
+  const hox = rNext * Math.cos(theta + dt);
+  const hoy = rNext * Math.sin(theta + dt);
+
+  return shapeNode(x, y, hix, hiy, hox, hoy);
+}
+
+/** Ellipse preset: ratio + orientation angle */
+export function presetEllipse(ratio: number, orientDeg: number): DeformShapeNode[] {
+  const orientRad = (orientDeg * Math.PI) / 180;
+  const cosO = Math.cos(orientRad);
+  const sinO = Math.sin(orientRad);
+  const raw = [
+    { x: 1, y: 0, hix: 0, hiy: -KAPPA, hox: 0, hoy: KAPPA },
+    { x: 0, y: 1, hix: KAPPA, hiy: 0, hox: -KAPPA, hoy: 0 },
+    { x: -1, y: 0, hix: 0, hiy: KAPPA, hox: 0, hoy: -KAPPA },
+    { x: 0, y: -1, hix: -KAPPA, hiy: 0, hox: KAPPA, hoy: 0 },
+  ];
+  function transform(px: number, py: number): { x: number; y: number } {
+    const sy = py * ratio;
+    return { x: px * cosO - sy * sinO, y: px * sinO + sy * cosO };
+  }
+  return raw.map(nd => {
+    const pos = transform(nd.x, nd.y);
+    const hiAbs = transform(nd.x + nd.hix, nd.y + nd.hiy);
+    const hoAbs = transform(nd.x + nd.hox, nd.y + nd.hoy);
+    return shapeNode(pos.x, pos.y, hiAbs.x, hiAbs.y, hoAbs.x, hoAbs.y);
+  });
+}
+
+/** Sine wave preset: frequency bumps around circle + amplitude */
+export function presetSine(freq: number, amplitude: number, phaseDeg: number): DeformShapeNode[] {
+  const phaseRad = (phaseDeg * Math.PI) / 180;
+  const count = Math.max(Math.round(freq) * 4, 12);
+  const rFn = (a: number) => 1 + amplitude * Math.sin(freq * a + phaseRad);
+  const nodes: DeformShapeNode[] = [];
+  for (let i = 0; i < count; i++) {
+    const theta = (2 * Math.PI * i) / count;
+    nodes.push(polarNode(rFn, theta, count));
+  }
+  return nodes;
+}
+
+/** Star preset: N points with depth (0 = circle, 1 = points touch center) */
+export function presetStar(points: number, depth: number): DeformShapeNode[] {
+  const count = points * 2;
+  const innerR = 1 - depth;
+  const rFn = (a: number) => {
+    let na = a % (2 * Math.PI);
+    if (na < 0) na += 2 * Math.PI;
+    const sector = (na / (2 * Math.PI)) * count;
+    const frac = sector - Math.floor(sector);
+    const isOuter = Math.floor(sector) % 2 === 0;
+    if (isOuter) return 1 - frac * (1 - innerR);
+    return innerR + frac * (1 - innerR);
+  };
+  const nodes: DeformShapeNode[] = [];
+  for (let i = 0; i < count; i++) {
+    const theta = (2 * Math.PI * i) / count;
+    nodes.push(polarNode(rFn, theta, count));
+  }
+  return nodes;
+}
+
+/** Polygon preset: N sides with corner rounding (0 = sharp, 1 = circle) */
+export function presetPolygon(sides: number, rounding: number): DeformShapeNode[] {
+  const nodesPerSide = 2;
+  const total = sides * nodesPerSide;
+  const result: DeformShapeNode[] = [];
+
+  for (let i = 0; i < sides; i++) {
+    const a0 = (2 * Math.PI * i) / sides - Math.PI / 2;
+    const a1 = (2 * Math.PI * (i + 1)) / sides - Math.PI / 2;
+    const amid = (a0 + a1) / 2;
+
+    const edgeMidR = Math.cos(Math.PI / sides);
+    const midR = edgeMidR + rounding * (1 - edgeMidR);
+
+    const vx = Math.cos(a0);
+    const vy = Math.sin(a0);
+    const handleLen = (2 * Math.PI / total) * KAPPA * rounding;
+    const hiAngle = a0 - Math.PI / 2;
+    const hoAngle = a0 + Math.PI / 2;
+    result.push(shapeNode(
+      vx, vy,
+      vx + handleLen * Math.cos(hiAngle), vy + handleLen * Math.sin(hiAngle),
+      vx + handleLen * Math.cos(hoAngle), vy + handleLen * Math.sin(hoAngle),
+    ));
+
+    const mx = midR * Math.cos(amid);
+    const my = midR * Math.sin(amid);
+    const mhiAngle = amid - Math.PI / 2;
+    const mhoAngle = amid + Math.PI / 2;
+    const mHandleLen = (2 * Math.PI / total) * KAPPA;
+    result.push(shapeNode(
+      mx, my,
+      mx + mHandleLen * Math.cos(mhiAngle), my + mHandleLen * Math.sin(mhiAngle),
+      mx + mHandleLen * Math.cos(mhoAngle), my + mHandleLen * Math.sin(mhoAngle),
+    ));
+  }
+  return result;
+}
+
+/** Rose curve preset: petals + depth */
+export function presetRose(petals: number, depth: number): DeformShapeNode[] {
+  const count = Math.max(petals * 4, 12);
+  const rFn = (a: number) => 1 + depth * Math.cos(petals * a);
+  const nodes: DeformShapeNode[] = [];
+  for (let i = 0; i < count; i++) {
+    const theta = (2 * Math.PI * i) / count;
+    nodes.push(polarNode(rFn, theta, count));
+  }
+  return nodes;
+}
+
+/** Superellipse preset: exponent (2=ellipse, <2=star-ish, >2=squarish) + ratio */
+export function presetSuperellipse(exponent: number, ratio: number): DeformShapeNode[] {
+  const count = 32;
+  const nodes: DeformShapeNode[] = [];
+  const rFn = (a: number) => {
+    const absCos = Math.abs(Math.cos(a));
+    const absSin = Math.abs(Math.sin(a));
+    if (absCos < 1e-10) return ratio;
+    if (absSin < 1e-10) return 1;
+    const term = Math.pow(absCos, exponent) + Math.pow(absSin / ratio, exponent);
+    return Math.pow(1 / term, 1 / exponent);
+  };
+  for (let i = 0; i < count; i++) {
+    const theta = (2 * Math.PI * i) / count;
+    nodes.push(polarNode(rFn, theta, count));
+  }
+  return nodes;
+}
+
 export interface BezierSpiralConfig {
   enabled: boolean;
   /** Stroke width in millimetres */
