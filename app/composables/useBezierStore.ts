@@ -4,8 +4,8 @@
  */
 import { reactive, ref, computed } from "vue";
 import { useStorage } from "@vueuse/core";
-import type { BezierSpiralConfig, PropCurve, PropNode } from "~/utils/spiral";
-import { defaultBezierSpiralConfig, propUid, bumpPropId, sampleBezierPath, generateSpiralPoints } from "~/utils/spiral";
+import type { BezierSpiralConfig, PropCurve, PropNode, DeformPoint, DeformShapeNode } from "~/utils/spiral";
+import { defaultBezierSpiralConfig, propUid, bumpPropId, sampleBezierPath, generateSpiralPoints, makeDeformPoint } from "~/utils/spiral";
 
 // ── Data model ───────────────────────────────────────────────────────────────
 
@@ -184,6 +184,11 @@ function duplicatePath(index: number) {
       ...srcCurve.nodes.map(n => ({ ...n, id: propUid(), handleIn: { ...n.handleIn }, handleOut: { ...n.handleOut } })),
     );
   }
+  p.spiral.deformation = src.spiral.deformation.map(dp => ({
+    id: propUid(),
+    t: dp.t,
+    nodes: dp.nodes.map(sn => ({ ...sn, id: propUid(), handleIn: { ...sn.handleIn }, handleOut: { ...sn.handleOut } })),
+  }));
   paths.push(p);
   activePathIndex.value = paths.length - 1;
   selectedIds.clear();
@@ -234,6 +239,17 @@ interface PropCurveSnap {
   max: number;
 }
 
+interface DeformShapeNodeSnap {
+  id: string; x: number; y: number;
+  handleIn: { dx: number; dy: number };
+  handleOut: { dx: number; dy: number };
+}
+
+interface DeformPointSnap {
+  id: string; t: number;
+  nodes: DeformShapeNodeSnap[];
+}
+
 interface SpiralSnap {
   enabled: boolean;
   lineWidth: number;
@@ -241,6 +257,7 @@ interface SpiralSnap {
   elliptic: PropCurveSnap;
   orientation: PropCurveSnap;
   frequency: PropCurveSnap;
+  deformation: DeformPointSnap[];
 }
 
 interface PathSnapshot {
@@ -270,6 +287,13 @@ function snapPropCurve(c: PropCurve): PropCurveSnap {
   return { nodes: c.nodes.map(n => ({ id: n.id, t: n.t, value: n.value, handleIn: { ...n.handleIn }, handleOut: { ...n.handleOut } })), min: c.min, max: c.max };
 }
 
+function snapDeformation(d: DeformPoint[]): DeformPointSnap[] {
+  return d.map(dp => ({
+    id: dp.id, t: dp.t,
+    nodes: dp.nodes.map(n => ({ id: n.id, x: n.x, y: n.y, handleIn: { ...n.handleIn }, handleOut: { ...n.handleOut } })),
+  }));
+}
+
 function snapSpiral(s: BezierSpiralConfig): SpiralSnap {
   return {
     enabled: s.enabled,
@@ -278,6 +302,7 @@ function snapSpiral(s: BezierSpiralConfig): SpiralSnap {
     elliptic: snapPropCurve(s.elliptic),
     orientation: snapPropCurve(s.orientation),
     frequency: snapPropCurve(s.frequency),
+    deformation: snapDeformation(s.deformation),
   };
 }
 
@@ -318,6 +343,12 @@ function applySnapshot(snap: Snapshot) {
     restorePropCurve(sp.elliptic, ps.spiral.elliptic);
     restorePropCurve(sp.orientation, ps.spiral.orientation);
     restorePropCurve(sp.frequency, ps.spiral.frequency);
+    if (ps.spiral.deformation) {
+      sp.deformation = ps.spiral.deformation.map(dp => ({
+        id: dp.id, t: dp.t,
+        nodes: dp.nodes.map(n => ({ id: n.id, x: n.x, y: n.y, handleIn: { ...n.handleIn }, handleOut: { ...n.handleOut } })),
+      }));
+    }
     const p: BezierPath = reactive({
       id: ps.id,
       name: ps.name,
@@ -346,6 +377,12 @@ function applySnapshot(snap: Snapshot) {
     // Restore prop node ids
     for (const key of ["radius", "elliptic", "orientation", "frequency"] as const) {
       for (const pn of ps.spiral[key].nodes) bumpPropId(pn.id);
+    }
+    if (ps.spiral.deformation) {
+      for (const dp of ps.spiral.deformation) {
+        bumpPropId(dp.id);
+        for (const sn of dp.nodes) bumpPropId(sn.id);
+      }
     }
   }
 }
@@ -682,6 +719,7 @@ export interface ProjectData {
       elliptic: { nodes: { id: string; t: number; value: number; handleIn: { dt: number; dv: number }; handleOut: { dt: number; dv: number } }[]; min: number; max: number };
       orientation: { nodes: { id: string; t: number; value: number; handleIn: { dt: number; dv: number }; handleOut: { dt: number; dv: number } }[]; min: number; max: number };
       frequency: { nodes: { id: string; t: number; value: number; handleIn: { dt: number; dv: number }; handleOut: { dt: number; dv: number } }[]; min: number; max: number };
+      deformation?: { id: string; t: number; nodes: { id: string; x: number; y: number; handleIn: { dx: number; dy: number }; handleOut: { dx: number; dy: number } }[] }[];
     };
   }[];
   activePathIndex: number;
@@ -724,6 +762,10 @@ function exportProject(): ProjectData {
         elliptic: serializePropCurve(p.spiral.elliptic),
         orientation: serializePropCurve(p.spiral.orientation),
         frequency: serializePropCurve(p.spiral.frequency),
+        deformation: p.spiral.deformation.map(dp => ({
+          id: dp.id, t: dp.t,
+          nodes: dp.nodes.map(n => ({ id: n.id, x: n.x, y: n.y, handleIn: { ...n.handleIn }, handleOut: { ...n.handleOut } })),
+        })),
       },
     })),
     activePathIndex: activePathIndex.value,
@@ -751,6 +793,12 @@ function importProject(data: ProjectData) {
       );
       sp[key].min = src.min;
       sp[key].max = src.max;
+    }
+    if (ps.spiral.deformation) {
+      sp.deformation = ps.spiral.deformation.map(dp => ({
+        id: dp.id, t: dp.t,
+        nodes: dp.nodes.map(n => ({ id: n.id, x: n.x, y: n.y, handleIn: { ...n.handleIn }, handleOut: { ...n.handleOut } })),
+      }));
     }
     const p: BezierPath = reactive({
       id: ps.id,
@@ -790,6 +838,12 @@ function importProject(data: ProjectData) {
     for (const key of ["radius", "elliptic", "orientation", "frequency"] as const) {
       if (!ps.spiral[key]) continue;
       for (const pn of ps.spiral[key].nodes) bumpPropId(pn.id);
+    }
+    if (ps.spiral.deformation) {
+      for (const dp of ps.spiral.deformation) {
+        bumpPropId(dp.id);
+        for (const sn of dp.nodes) bumpPropId(sn.id);
+      }
     }
   }
 

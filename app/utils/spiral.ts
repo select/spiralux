@@ -27,6 +27,73 @@ export interface PropCurve {
   nodes: PropNode[];
 }
 
+// ── Deformation shape data model ─────────────────────────────────────────────
+
+export interface DeformShapeNode {
+  id: string;
+  /** Normalized x coordinate (unit circle = 1) */
+  x: number;
+  /** Normalized y coordinate (unit circle = 1) */
+  y: number;
+  handleIn: { dx: number; dy: number };
+  handleOut: { dx: number; dy: number };
+}
+
+export interface DeformPoint {
+  id: string;
+  /** 0–1 position along the backbone path */
+  t: number;
+  /** Closed bezier shape nodes */
+  nodes: DeformShapeNode[];
+}
+
+/** Bezier circle approximation constant: 4/3 * (√2 − 1) */
+const KAPPA = 0.5522847498;
+
+/**
+ * Create a closed bezier shape matching the spiral cross-section at a given t.
+ * Applies elliptic ratio and orientation from the property curves so the
+ * initial deformation shape reflects the current spiral parameters.
+ */
+export function makeDeformShape(config: BezierSpiralConfig, t: number): DeformShapeNode[] {
+  const elliptic = evaluatePropCurve(config.elliptic, t);
+  const orientDeg = evaluatePropCurve(config.orientation, t);
+  const orientRad = (orientDeg * Math.PI) / 180;
+  const cosO = Math.cos(orientRad);
+  const sinO = Math.sin(orientRad);
+
+  // Unit circle nodes before transformation
+  const raw: { x: number; y: number; hix: number; hiy: number; hox: number; hoy: number }[] = [
+    { x: 1, y: 0, hix: 0, hiy: -KAPPA, hox: 0, hoy: KAPPA },
+    { x: 0, y: 1, hix: KAPPA, hiy: 0, hox: -KAPPA, hoy: 0 },
+    { x: -1, y: 0, hix: 0, hiy: KAPPA, hox: 0, hoy: -KAPPA },
+    { x: 0, y: -1, hix: -KAPPA, hiy: 0, hox: KAPPA, hoy: 0 },
+  ];
+
+  // Apply elliptic stretch (scale y axis) then rotate by orientation
+  function transform(px: number, py: number): { x: number; y: number } {
+    const sy = py * elliptic;
+    return { x: px * cosO - sy * sinO, y: px * sinO + sy * cosO };
+  }
+
+  return raw.map(n => {
+    const pos = transform(n.x, n.y);
+    const hiAbs = transform(n.x + n.hix, n.y + n.hiy);
+    const hoAbs = transform(n.x + n.hox, n.y + n.hoy);
+    return {
+      id: propUid(),
+      x: pos.x,
+      y: pos.y,
+      handleIn: { dx: hiAbs.x - pos.x, dy: hiAbs.y - pos.y },
+      handleOut: { dx: hoAbs.x - pos.x, dy: hoAbs.y - pos.y },
+    };
+  });
+}
+
+export function makeDeformPoint(config: BezierSpiralConfig, t: number): DeformPoint {
+  return { id: propUid(), t, nodes: makeDeformShape(config, t) };
+}
+
 export interface BezierSpiralConfig {
   enabled: boolean;
   /** Stroke width in millimetres */
@@ -35,6 +102,8 @@ export interface BezierSpiralConfig {
   elliptic: PropCurve;
   orientation: PropCurve;
   frequency: PropCurve;
+  /** Deformation points along the path — closed bezier shapes */
+  deformation: DeformPoint[];
 }
 
 // ── ID generator (shared with main store via import) ─────────────────────────
@@ -59,7 +128,9 @@ function makePropNode(t: number, value: number, handleLen = 0.15): PropNode {
 }
 
 export function defaultBezierSpiralConfig(): BezierSpiralConfig {
-  return {
+  // Build config without deformation first, then create deformation points
+  // that reference the config for initial shape computation.
+  const cfg: BezierSpiralConfig = {
     enabled: true,
     lineWidth: 0.3,
     radius: {
@@ -94,7 +165,10 @@ export function defaultBezierSpiralConfig(): BezierSpiralConfig {
       unit: "/len",
       nodes: [makePropNode(0, 12), makePropNode(1, 12)],
     },
+    deformation: [],
   };
+  cfg.deformation = [makeDeformPoint(cfg, 0), makeDeformPoint(cfg, 1)];
+  return cfg;
 }
 
 // ── Evaluate a property curve at position t (0–1) ────────────────────────────

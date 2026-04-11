@@ -142,6 +142,16 @@ onUnmounted(() => window.removeEventListener("keydown", onKeydown));
         />
       </div>
     </template>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         DEFORMATION — always visible below property curves
+         ═══════════════════════════════════════════════════════════════ -->
+    <div
+      class="mt-1 transition-opacity duration-200"
+      :class="activePath.spiral.enabled ? 'opacity-100' : 'opacity-30 pointer-events-none'"
+    >
+      <DeformationPanel />
+    </div>
   </div>
 </template>
 
