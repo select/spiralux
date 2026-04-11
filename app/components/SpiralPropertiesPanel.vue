@@ -17,7 +17,7 @@ type ExpandedKey = CurveKey | "deformation";
 // null = all compact thumbnails; a key = that editor is fullscreen
 const expandedKey = ref<ExpandedKey | null>(null);
 
-const CURVE_KEYS: CurveKey[] = ["radius", "frequency", "elliptic", "orientation"];
+const CURVE_KEYS: CurveKey[] = ["radius", "frequency"];
 
 function curveFor(key: CurveKey): PropCurve | undefined {
   return activePath.value?.spiral[key];
