@@ -172,7 +172,19 @@ function onTravelDown(e: MouseEvent) {
 }
 
 function onTravelMove(e: MouseEvent) {
-  if (!travelDrag || !travelEl.value) return;
+  if (!travelEl.value) return;
+
+  // Cursor feedback when not dragging
+  if (!travelDrag) {
+    const rect = travelEl.value.getBoundingClientRect();
+    const isOver = e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom;
+    if (isOver && props.expanded) {
+      const { x, y } = getTravelPos(e);
+      travelEl.value.style.cursor = hitTravelPoint(x, y) >= 0 ? "pointer" : "crosshair";
+    }
+    return;
+  }
+
   travelDidDrag = true;
   const { x } = getTravelPos(e);
   const pts = deformation.value;
