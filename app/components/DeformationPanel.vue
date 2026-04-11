@@ -13,7 +13,7 @@ import { propUid, makeDeformPoint } from "~/utils/spiral";
 
 const props = defineProps<{ expanded?: boolean }>();
 
-const { path: activePath, pushUndo } = useBezierStore();
+const { path: activePath, pushUndo, spiralCursorT } = useBezierStore();
 
 const deformation = computed(() => activePath.value?.spiral.deformation ?? []);
 const config = computed(() => activePath.value?.spiral);
@@ -580,6 +580,15 @@ watch(selectedPoint, () => {
   selectedShapeNodeIdx.value = -1;
   nextTick(fitShapeCanvas);
 });
+
+// Sync selected deformation point's t into the store so BezierCanvas draws the spine marker
+watch(
+  () => (props.expanded && selectedPoint.value ? selectedPoint.value.t : null),
+  (t) => { spiralCursorT.value = t; },
+  { immediate: true },
+);
+
+onUnmounted(() => { spiralCursorT.value = null; });
 watch(() => props.expanded, (exp) => {
   if (!exp) {
     selectedIdx.value = -1;
