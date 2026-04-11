@@ -10,6 +10,7 @@
  * The worker uses transferable Float32Array buffers for zero-copy transfer.
  */
 
+import { toRaw } from "vue";
 import type { SpiralPointArray, BezierSpiralConfig } from "~/utils/spiral";
 import { sampleBezierPath, generateSpiralPoints, buildSpiralLUTs } from "~/utils/spiral";
 import type { SpiralWorkerRequest, SpiralWorkerResponse } from "~/workers/spiral.types";
@@ -161,8 +162,14 @@ export function computeSpiral(
   if (w) {
     const id = nextRequestId++;
     pending.set(pathId, { id, pathId, fingerprint: fp });
-    // Deep-clone to strip Vue reactive proxies (structuredClone can't serialize Proxy)
-    const msg: SpiralWorkerRequest = JSON.parse(JSON.stringify({ id, pathId, nodes, closed, numSamples, spiral }));
+    // toRaw strips the Vue reactive Proxy wrapper; structuredClone deep-copies for the worker
+    const msg: SpiralWorkerRequest = {
+      id, pathId,
+      nodes: structuredClone(toRaw(nodes)),
+      closed,
+      numSamples,
+      spiral: structuredClone(toRaw(spiral)),
+    };
     w.postMessage(msg);
   }
 
