@@ -2,14 +2,16 @@
 /**
  * DeformationPanel — travel path with deformation points + shape editor.
  *
- * Left: horizontal travel-path canvas (t = 0..1) with clickable deformation
- * points, each showing a tiny non-editable shape preview.
- *
- * Right: when a point is selected, an interactive bezier closed-shape editor
- * opens where the user can drag nodes and handles to deform the shape.
+ * Two modes (controlled by parent):
+ *   - compact (!expanded): read-only travel-path thumbnail.
+ *     Interaction is handled by parent (click wrapper to expand).
+ *   - expanded: full editor — travel path on the left with interactive
+ *     deformation points, shape bezier editor on the right.
  */
 import type { DeformPoint, DeformShapeNode } from "~/utils/spiral";
 import { propUid, makeDeformPoint } from "~/utils/spiral";
+
+const props = defineProps<{ expanded?: boolean }>();
 
 const { path: activePath, pushUndo } = useBezierStore();
 
@@ -28,19 +30,21 @@ const selectedPoint = computed(() => {
 const travelEl = ref<HTMLCanvasElement | null>(null);
 let travelCtx: CanvasRenderingContext2D | null = null;
 
-const TRAVEL_H = 72;
+// Compact mode: 56px tall (matches prop curve thumbnails)
+// Expanded mode: 72px tall with more padding
+const TRAVEL_H = computed(() => props.expanded ? 72 : 56);
 const TRAVEL_PAD_L = 12;
 const TRAVEL_PAD_R = 12;
-const TRAVEL_PAD_T = 8;
-const TRAVEL_PAD_B = 14;
-const PREVIEW_R = 18;
+const TRAVEL_PAD_T = computed(() => props.expanded ? 8 : 6);
+const TRAVEL_PAD_B = computed(() => props.expanded ? 14 : 12);
+const PREVIEW_R = computed(() => props.expanded ? 18 : 14);
 const HIT_R = 16;
 
 function travelW(): number { return travelEl.value?.getBoundingClientRect().width ?? 200; }
 function travelGraphW(): number { return travelW() - TRAVEL_PAD_L - TRAVEL_PAD_R; }
 function tToTravelX(t: number): number { return TRAVEL_PAD_L + t * travelGraphW(); }
 function travelXToT(x: number): number { return Math.max(0, Math.min(1, (x - TRAVEL_PAD_L) / travelGraphW())); }
-const TRAVEL_CY = TRAVEL_H / 2;
+const travelCY = computed(() => TRAVEL_H.value / 2);
 
 /** Draw a closed bezier shape on a canvas context at (cx, cy) with given scale */
 function traceShape(ctx: CanvasRenderingContext2D, nodes: DeformShapeNode[], cx: number, cy: number, scale: number) {
@@ -63,20 +67,25 @@ function traceShape(ctx: CanvasRenderingContext2D, nodes: DeformShapeNode[], cx:
 function drawTravel() {
   const c = travelEl.value;
   if (!c || !travelCtx) return;
+  const h = TRAVEL_H.value;
+  const cy = travelCY.value;
+  const padT = TRAVEL_PAD_T.value;
+  const padB = TRAVEL_PAD_B.value;
+  const prevR = PREVIEW_R.value;
   const w = c.getBoundingClientRect().width;
   const ctx = travelCtx;
-  ctx.clearRect(0, 0, w, TRAVEL_H);
+  ctx.clearRect(0, 0, w, h);
 
   // Background
   ctx.fillStyle = "rgba(0,0,0,0.15)";
-  ctx.fillRect(TRAVEL_PAD_L, TRAVEL_PAD_T, travelGraphW(), TRAVEL_H - TRAVEL_PAD_T - TRAVEL_PAD_B);
+  ctx.fillRect(TRAVEL_PAD_L, padT, travelGraphW(), h - padT - padB);
 
   // Horizontal travel line
   ctx.strokeStyle = "rgba(255,255,255,0.15)";
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.moveTo(TRAVEL_PAD_L, TRAVEL_CY);
-  ctx.lineTo(w - TRAVEL_PAD_R, TRAVEL_CY);
+  ctx.moveTo(TRAVEL_PAD_L, cy);
+  ctx.lineTo(w - TRAVEL_PAD_R, cy);
   ctx.stroke();
 
   // Deformation points with shape previews
@@ -84,11 +93,11 @@ function drawTravel() {
   for (let i = 0; i < pts.length; i++) {
     const dp = pts[i]!;
     const px = tToTravelX(dp.t);
-    const isSelected = i === selectedIdx.value;
+    const isSelected = props.expanded && i === selectedIdx.value;
 
     // Tiny shape preview
     ctx.save();
-    traceShape(ctx, dp.nodes, px, TRAVEL_CY, PREVIEW_R * 0.7);
+    traceShape(ctx, dp.nodes, px, cy, prevR * 0.7);
     ctx.strokeStyle = isSelected ? "#22d3ee" : "rgba(168,85,247,0.7)";
     ctx.lineWidth = isSelected ? 1.8 : 1;
     ctx.stroke();
@@ -98,33 +107,35 @@ function drawTravel() {
     }
     ctx.restore();
 
-    // t label
-    ctx.font = "9px system-ui, sans-serif";
-    ctx.fillStyle = isSelected ? "#22d3ee" : "rgba(255,255,255,0.35)";
-    ctx.textAlign = "center";
-    ctx.fillText(`${(dp.t * 100).toFixed(0)}%`, px, TRAVEL_H - 2);
+    // t label (only in expanded)
+    if (props.expanded) {
+      ctx.font = "9px system-ui, sans-serif";
+      ctx.fillStyle = isSelected ? "#22d3ee" : "rgba(255,255,255,0.35)";
+      ctx.textAlign = "center";
+      ctx.fillText(`${(dp.t * 100).toFixed(0)}%`, px, h - 2);
+    }
   }
 
   // Label
   ctx.textAlign = "left";
   ctx.fillStyle = "#a855f7";
   ctx.font = "bold 9px system-ui, sans-serif";
-  ctx.fillText("Deform", TRAVEL_PAD_L + 4, TRAVEL_PAD_T + 10);
-}
-
-// Travel path hit testing
-function hitTravelPoint(mx: number, my: number): number {
-  const pts = deformation.value;
-  for (let i = pts.length - 1; i >= 0; i--) {
-    const px = tToTravelX(pts[i]!.t);
-    if ((px - mx) ** 2 + (TRAVEL_CY - my) ** 2 < HIT_R * HIT_R) return i;
-  }
-  return -1;
+  ctx.fillText("Deform", TRAVEL_PAD_L + 4, padT + 10);
 }
 
 // Travel drag state
 let travelDrag: { idx: number } | null = null;
 let travelDidDrag = false;
+
+function hitTravelPoint(mx: number, my: number): number {
+  const pts = deformation.value;
+  const cy = travelCY.value;
+  for (let i = pts.length - 1; i >= 0; i--) {
+    const px = tToTravelX(pts[i]!.t);
+    if ((px - mx) ** 2 + (cy - my) ** 2 < HIT_R * HIT_R) return i;
+  }
+  return -1;
+}
 
 function getTravelPos(e: MouseEvent) {
   const rect = travelEl.value!.getBoundingClientRect();
@@ -132,7 +143,7 @@ function getTravelPos(e: MouseEvent) {
 }
 
 function onTravelDown(e: MouseEvent) {
-  if (e.button !== 0) return;
+  if (e.button !== 0 || !props.expanded) return;
   const { x, y } = getTravelPos(e);
   travelDidDrag = false;
 
@@ -178,6 +189,7 @@ function onTravelUp() {
 }
 
 function onTravelDblClick(e: MouseEvent) {
+  if (!props.expanded) return;
   const { x, y } = getTravelPos(e);
   const hi = hitTravelPoint(x, y);
   if (hi >= 0 && deformation.value.length > 2) {
@@ -195,7 +207,7 @@ function fitTravelCanvas() {
   const dpr = window.devicePixelRatio || 1;
   const rect = c.getBoundingClientRect();
   c.width = rect.width * dpr;
-  c.height = TRAVEL_H * dpr;
+  c.height = TRAVEL_H.value * dpr;
   travelCtx = c.getContext("2d")!;
   travelCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
   drawTravel();
@@ -556,10 +568,19 @@ watch(selectedPoint, () => {
   selectedShapeNodeIdx.value = -1;
   nextTick(fitShapeCanvas);
 });
+watch(() => props.expanded, (exp) => {
+  if (!exp) {
+    selectedIdx.value = -1;
+    selectedShapeNodeIdx.value = -1;
+  }
+  nextTick(() => { fitTravelCanvas(); fitShapeCanvas(); });
+});
 
 onMounted(() => {
   fitTravelCanvas();
+  nextTick(fitShapeCanvas); // canvas always in DOM when expanded
   window.addEventListener("resize", fitTravelCanvas);
+  window.addEventListener("resize", fitShapeCanvas);
   window.addEventListener("mousemove", onTravelMove);
   window.addEventListener("mouseup", onTravelUp);
   window.addEventListener("mousemove", onShapeMove);
@@ -568,6 +589,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener("resize", fitTravelCanvas);
+  window.removeEventListener("resize", fitShapeCanvas);
   window.removeEventListener("mousemove", onTravelMove);
   window.removeEventListener("mouseup", onTravelUp);
   window.removeEventListener("mousemove", onShapeMove);
@@ -576,25 +598,42 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="flex gap-2 items-start">
-    <!-- Travel path (left) -->
-    <div class="flex-1 min-w-0 flex flex-col gap-0.5">
-      <canvas
-        ref="travelEl"
-        :style="{ height: TRAVEL_H + 'px' }"
-        class="w-full rounded-lg cursor-crosshair"
-        @mousedown="onTravelDown"
-        @dblclick="onTravelDblClick"
-      />
-      <span class="text-[9px] text-muted px-1">click to add · dbl-click to remove · drag to move</span>
-    </div>
+  <!-- COMPACT: just the travel strip, click handled by parent wrapper -->
+  <template v-if="!expanded">
+    <canvas
+      ref="travelEl"
+      :style="{ height: TRAVEL_H + 'px' }"
+      class="w-full rounded-lg"
+    />
+  </template>
 
-    <!-- Shape editor (right, when a point is selected) -->
-    <Transition name="shape-editor">
-      <div v-if="selectedPoint" class="shrink-0 flex flex-col gap-1">
-        <div class="flex items-center gap-1 px-1">
+  <!-- EXPANDED: travel path + shape editor side by side -->
+  <template v-else>
+    <div class="flex gap-2 items-start">
+      <!-- Travel path (left) -->
+      <div class="flex-1 min-w-0 flex flex-col gap-0.5">
+        <canvas
+          ref="travelEl"
+          :style="{ height: TRAVEL_H + 'px' }"
+          class="w-full rounded-lg cursor-crosshair"
+          @mousedown="onTravelDown"
+          @dblclick="onTravelDblClick"
+        />
+        <span class="text-[9px] text-muted px-1">click to add · dbl-click to remove · drag to move</span>
+      </div>
+
+      <!-- Shape editor column — always reserves fixed space -->
+      <div
+        class="shrink-0 flex flex-col gap-1"
+        :style="{ width: SHAPE_SIZE + 'px' }"
+      >
+        <!-- Header: visible only when a point is selected -->
+        <div
+          class="flex items-center gap-1 px-1 transition-opacity duration-150"
+          :style="{ visibility: selectedPoint ? 'visible' : 'hidden' }"
+        >
           <span class="text-[10px] font-semibold text-[#a855f7]">
-            Shape @ {{ (selectedPoint.t * 100).toFixed(0) }}%
+            Shape @ {{ selectedPoint ? (selectedPoint.t * 100).toFixed(0) : '–' }}%
           </span>
           <button
             class="ml-auto flex items-center gap-0.5 text-[9px] text-muted hover:text-primary transition-colors cursor-pointer"
@@ -611,27 +650,28 @@ onUnmounted(() => {
             <i class="i-mdi-close text-sm text-muted hover:text-primary" />
           </button>
         </div>
+
+        <!-- Canvas: always present at fixed size; content drawn only when selected -->
         <canvas
           ref="shapeEl"
           :style="{ width: SHAPE_SIZE + 'px', height: SHAPE_SIZE + 'px' }"
-          class="rounded-lg"
+          class="rounded-lg transition-opacity duration-150"
+          :class="selectedPoint ? 'opacity-100' : 'opacity-0'"
           @mousedown="onShapeDown"
           @mousemove="onShapeHover"
           @dblclick="onShapeDblClick"
           @contextmenu="onShapeContextMenu"
         />
-        <span class="text-[9px] text-muted px-1">drag nodes · click curve to add · shift for asymmetric handles</span>
+
+        <!-- Help text: visible only when a point is selected -->
+        <span
+          class="text-[9px] text-muted px-1 transition-opacity duration-150"
+          :style="{ visibility: selectedPoint ? 'visible' : 'hidden' }"
+        >drag nodes · click curve to add · shift for asymmetric</span>
       </div>
-    </Transition>
-  </div>
+    </div>
+  </template>
 </template>
 
 <style scoped>
-.shape-editor-enter-active, .shape-editor-leave-active {
-  transition: opacity 0.15s ease, transform 0.15s ease;
-}
-.shape-editor-enter-from, .shape-editor-leave-to {
-  opacity: 0;
-  transform: translateX(8px);
-}
 </style>
