@@ -161,7 +161,8 @@ export function computeSpiral(
   if (w) {
     const id = nextRequestId++;
     pending.set(pathId, { id, pathId, fingerprint: fp });
-    const msg: SpiralWorkerRequest = { id, pathId, nodes, closed, numSamples, spiral };
+    // Deep-clone to strip Vue reactive proxies (structuredClone can't serialize Proxy)
+    const msg: SpiralWorkerRequest = JSON.parse(JSON.stringify({ id, pathId, nodes, closed, numSamples, spiral }));
     w.postMessage(msg);
   }
 
