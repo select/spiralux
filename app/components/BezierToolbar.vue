@@ -142,6 +142,16 @@ function onDragEnd() {
             >
               <i class="i-mdi-dna" /> Genetic Evolution
             </button>
+            <div class="border-t border-border/40 my-1" />
+            <a
+              href="https://github.com/select/spiralux"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="w-full flex items-center gap-2 px-3 py-2 text-sm text-primary hover:bg-elevated/60 transition-colors"
+              @click="showNav = false"
+            >
+              <i class="i-mdi-github" /> GitHub
+            </a>
           </div>
         </Transition>
         <div v-if="showNav" class="fixed inset-0 z-40" @click="showNav = false" />
