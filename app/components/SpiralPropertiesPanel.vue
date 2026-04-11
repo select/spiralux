@@ -143,7 +143,7 @@ onUnmounted(() => window.removeEventListener("keydown", onKeydown));
           </button>
         </div>
 
-        <span class="ml-auto text-[9px] text-muted">
+        <span class="ml-auto text-[9px] text-muted hidden sm:block">
           <template v-if="expandedKey !== 'deformation'">
             click to add · dbl-click to remove · click curve for presets
           </template>
@@ -151,6 +151,29 @@ onUnmounted(() => window.removeEventListener("keydown", onKeydown));
             click to add point · dbl-click to remove · drag nodes to deform
           </template>
         </span>
+
+        <!-- Eye toggle + line width always visible in expanded mode -->
+        <button
+          class="ml-auto sm:ml-0 flex items-center justify-center w-6 h-6 rounded transition-colors cursor-pointer shrink-0"
+          :class="activePath.spiral.enabled ? 'text-accent hover:text-accent/70' : 'text-muted hover:text-primary'"
+          :title="activePath.spiral.enabled ? 'Hide spiral' : 'Show spiral'"
+          @click.stop="toggleSpiral"
+        >
+          <i :class="activePath.spiral.enabled ? 'i-mdi-eye-outline' : 'i-mdi-eye-off-outline'" class="text-base" />
+        </button>
+        <label class="flex items-center gap-1 text-[10px] text-muted shrink-0 cursor-pointer">
+          <span>lw</span>
+          <input
+            type="number"
+            min="0.01"
+            max="10"
+            step="0.05"
+            class="w-14 h-5 text-[10px] bg-elevated/50 border border-border/40 rounded px-1 text-primary text-right appearance-none"
+            :value="activePath.spiral.lineWidth"
+            @change="(e) => { pushUndo(); activePath!.spiral.lineWidth = Math.max(0.01, parseFloat((e.target as HTMLInputElement).value) || 0.3); }"
+          />
+          <span>mm</span>
+        </label>
       </div>
 
       <!-- Editor body -->
