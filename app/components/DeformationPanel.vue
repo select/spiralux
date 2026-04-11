@@ -33,17 +33,17 @@ let travelCtx: CanvasRenderingContext2D | null = null;
 // Compact mode: 56px tall (matches prop curve thumbnails)
 // Expanded mode: 72px tall with more padding
 const TRAVEL_H = computed(() => props.expanded ? 100 : 56);
-const TRAVEL_PAD_L = 12;
-const TRAVEL_PAD_R = 12;
+const TRAVEL_PAD_L = computed(() => PREVIEW_R.value + 4);
+const TRAVEL_PAD_R = computed(() => PREVIEW_R.value + 4);
 const TRAVEL_PAD_T = computed(() => props.expanded ? 8 : 6);
 const TRAVEL_PAD_B = computed(() => props.expanded ? 8 : 12);
 const PREVIEW_R = computed(() => props.expanded ? 36 : 14);
 const HIT_R = 16;
 
 function travelW(): number { return travelEl.value?.getBoundingClientRect().width ?? 200; }
-function travelGraphW(): number { return travelW() - TRAVEL_PAD_L - TRAVEL_PAD_R; }
-function tToTravelX(t: number): number { return TRAVEL_PAD_L + t * travelGraphW(); }
-function travelXToT(x: number): number { return Math.max(0, Math.min(1, (x - TRAVEL_PAD_L) / travelGraphW())); }
+function travelGraphW(): number { return travelW() - TRAVEL_PAD_L.value - TRAVEL_PAD_R.value; }
+function tToTravelX(t: number): number { return TRAVEL_PAD_L.value + t * travelGraphW(); }
+function travelXToT(x: number): number { return Math.max(0, Math.min(1, (x - TRAVEL_PAD_L.value) / travelGraphW())); }
 const travelCY = computed(() => TRAVEL_H.value / 2);
 
 /** Draw a closed bezier shape on a canvas context at (cx, cy) with given scale */
@@ -78,14 +78,14 @@ function drawTravel() {
 
   // Background
   ctx.fillStyle = "rgba(0,0,0,0.15)";
-  ctx.fillRect(TRAVEL_PAD_L, padT, travelGraphW(), h - padT - padB);
+  ctx.fillRect(TRAVEL_PAD_L.value, padT, travelGraphW(), h - padT - padB);
 
   // Horizontal travel line
   ctx.strokeStyle = "rgba(255,255,255,0.15)";
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.moveTo(TRAVEL_PAD_L, cy);
-  ctx.lineTo(w - TRAVEL_PAD_R, cy);
+  ctx.moveTo(TRAVEL_PAD_L.value, cy);
+  ctx.lineTo(w - TRAVEL_PAD_R.value, cy);
   ctx.stroke();
 
   // Deformation points with shape previews
@@ -120,7 +120,7 @@ function drawTravel() {
   ctx.textAlign = "left";
   ctx.fillStyle = "#a855f7";
   ctx.font = "bold 9px system-ui, sans-serif";
-  ctx.fillText("Deform", TRAVEL_PAD_L + 4, padT + 10);
+  ctx.fillText("Deform", TRAVEL_PAD_L.value + 4, padT + 10);
 }
 
 // Travel drag state
