@@ -8,11 +8,12 @@
  *
  * Architecture:
  * - Maintains a per-path cache of computed spiral point arrays
- * - On path/config change, returns stale cache instantly (non-blocking)
- *   and dispatches async computation to the active backend
- * - First render (no cache) computes synchronously to avoid blank frame
- *
- * The worker uses transferable Float32Array buffers for zero-copy transfer.
+ * - On cache miss, returns stale cache (non-blocking) and dispatches ONE
+ *   async computation. Only one in-flight request per path at a time.
+ * - When the result arrives, cache is updated and a redraw is triggered.
+ *   If the fingerprint changed while in-flight, the next render cycle
+ *   will dispatch again automatically.
+ * - First render (no cache) computes synchronously to avoid blank frame.
  */
 
 import { toRaw } from "vue";
@@ -24,16 +25,7 @@ import type { SpiralWorkerRequest, SpiralWorkerResponse } from "~/workers/spiral
 // ── Types ────────────────────────────────────────────────────────────────────
 
 interface CacheEntry {
-  /** Cached spiral point array */
   pts: SpiralPointArray;
-  /** Config fingerprint to detect staleness */
-  fingerprint: string;
-}
-
-interface PendingRequest {
-  id: number;
-  pathId: string;
-  /** Fingerprint at the time the request was made */
   fingerprint: string;
 }
 
@@ -42,7 +34,14 @@ interface PendingRequest {
 let worker: Worker | null = null;
 let nextRequestId = 1;
 const cache = new Map<string, CacheEntry>();
-const pending = new Map<string, PendingRequest>();
+
+/**
+ * Per-path in-flight tracking. Only ONE async computation at a time per path.
+ * Maps pathId → the fingerprint currently being computed.
+ * Prevents flooding the GPU/worker with redundant requests.
+ */
+const inflight = new Map<string, string>();
+
 let onUpdateCallback: (() => void) | null = null;
 
 /** Which backend is active. Resolved on first use. */
@@ -55,14 +54,12 @@ let _backendResolving = false;
 async function resolveBackend(): Promise<Backend> {
   if (_backend) return _backend;
 
-  // Try WebGPU first
   if (await isWebGPUAvailable()) {
     _backend = "gpu";
     console.info("[Spiral] Using WebGPU compute backend");
     return _backend;
   }
 
-  // Try Web Worker
   const w = ensureWorker();
   if (w) {
     _backend = "worker";
@@ -75,10 +72,6 @@ async function resolveBackend(): Promise<Backend> {
   return _backend;
 }
 
-/**
- * Kick off backend detection early (called once from BezierCanvas onMounted).
- * Does not block — just starts the async probe so it's ready by first interaction.
- */
 export function initSpiralBackend() {
   if (!_backend && !_backendResolving) {
     _backendResolving = true;
@@ -86,18 +79,12 @@ export function initSpiralBackend() {
   }
 }
 
-/**
- * Returns the currently active backend name (for UI display / debugging).
- */
 export function getSpiralBackend(): string {
   return _backend ?? "detecting…";
 }
 
 // ── Fingerprinting ───────────────────────────────────────────────────────────
 
-/**
- * Cheap fingerprint of a spiral config for cache invalidation.
- */
 function spiralFingerprint(
   nodes: { x: number; y: number; handleIn: { x: number; y: number }; handleOut: { x: number; y: number } }[],
   closed: boolean,
@@ -140,10 +127,8 @@ function ensureWorker(): Worker | null {
       { type: "module" },
     );
     worker.onmessage = (e: MessageEvent<SpiralWorkerResponse>) => {
-      handleAsyncResult(e.data.pathId, e.data.id, {
-        data: e.data.data,
-        length: e.data.length,
-      });
+      const { pathId, data, length } = e.data;
+      onAsyncComplete(pathId, { data, length });
     };
     worker.onerror = (err) => {
       console.warn("[SpiralWorker] error, falling back to sync:", err.message);
@@ -157,94 +142,103 @@ function ensureWorker(): Worker | null {
   }
 }
 
-// ── Shared async result handler ──────────────────────────────────────────────
+// ── Async result handler ─────────────────────────────────────────────────────
 
-function handleAsyncResult(pathId: string, requestId: number, pts: SpiralPointArray) {
-  const pend = pending.get(pathId);
-  if (pend && pend.id === requestId) {
-    pending.delete(pathId);
-    cache.set(pathId, { pts, fingerprint: pend.fingerprint });
-    onUpdateCallback?.();
-  }
+/**
+ * Called when any async backend (GPU or worker) completes.
+ * Updates cache with the result and triggers a canvas redraw.
+ * The next render cycle will check if another dispatch is needed
+ * (fingerprint may have changed while this was in-flight).
+ */
+function onAsyncComplete(pathId: string, pts: SpiralPointArray) {
+  const fp = inflight.get(pathId);
+  if (!fp) return; // no in-flight request (stale callback)
+
+  inflight.delete(pathId);
+  cache.set(pathId, { pts, fingerprint: fp });
+  onUpdateCallback?.();
 }
 
-// ── GPU dispatch ─────────────────────────────────────────────────────────────
+// ── Dispatch helpers ─────────────────────────────────────────────────────────
+
+type NodeArg = { x: number; y: number; handleIn: { x: number; y: number }; handleOut: { x: number; y: number } }[];
 
 function dispatchGPU(
-  requestId: number,
   pathId: string,
-  nodes: { x: number; y: number; handleIn: { x: number; y: number }; handleOut: { x: number; y: number } }[],
+  nodes: NodeArg,
   closed: boolean,
   numSamples: number,
   spiral: BezierSpiralConfig,
 ) {
-  // Deep-clone to avoid reactive proxy issues in the async closure
   const rawNodes = structuredClone(toRaw(nodes));
   const rawSpiral = structuredClone(toRaw(spiral));
 
-  generateSpiralPointsGPU(rawNodes, closed, numSamples, rawSpiral).then((result) => {
-    if (result) {
-      handleAsyncResult(pathId, requestId, result);
-    } else {
-      // GPU failed — fall back to worker or sync
-      console.warn("[SpiralGPU] dispatch failed, falling back");
+  generateSpiralPointsGPU(rawNodes, closed, numSamples, rawSpiral)
+    .then((result) => {
+      if (result) {
+        onAsyncComplete(pathId, result);
+      } else {
+        // GPU failed — fall back
+        console.warn("[SpiralGPU] dispatch failed, falling back");
+        _backend = ensureWorker() ? "worker" : "sync";
+        inflight.delete(pathId);
+        onUpdateCallback?.(); // trigger redraw to recompute via fallback
+      }
+    })
+    .catch(() => {
+      inflight.delete(pathId);
       _backend = ensureWorker() ? "worker" : "sync";
-      dispatchWorkerOrSync(requestId, pathId, rawNodes, closed, numSamples, rawSpiral);
-    }
-  });
+      onUpdateCallback?.();
+    });
 }
 
-// ── Worker / sync dispatch ───────────────────────────────────────────────────
-
-function dispatchWorkerOrSync(
-  requestId: number,
+function dispatchWorker(
   pathId: string,
-  nodes: { x: number; y: number; handleIn: { x: number; y: number }; handleOut: { x: number; y: number } }[],
+  nodes: NodeArg,
   closed: boolean,
   numSamples: number,
   spiral: BezierSpiralConfig,
 ) {
   const w = ensureWorker();
-  if (w) {
-    const msg: SpiralWorkerRequest = {
-      id: requestId, pathId,
-      nodes: structuredClone(nodes),
-      closed,
-      numSamples,
-      spiral: structuredClone(spiral),
-    };
-    w.postMessage(msg);
-  } else {
-    // Sync fallback — compute immediately
+  if (!w) {
+    // Worker gone — compute sync
+    inflight.delete(pathId);
     const samples = sampleBezierPath(nodes, closed, numSamples);
     const luts = buildSpiralLUTs(spiral);
     const pts = generateSpiralPoints(samples, spiral, luts);
-    handleAsyncResult(pathId, requestId, pts);
+    const fp = inflight.get(pathId);
+    cache.set(pathId, { pts, fingerprint: fp ?? "" });
+    return;
   }
+
+  const id = nextRequestId++;
+  const msg: SpiralWorkerRequest = {
+    id, pathId,
+    nodes: structuredClone(toRaw(nodes)),
+    closed,
+    numSamples,
+    spiral: structuredClone(toRaw(spiral)),
+  };
+  w.postMessage(msg);
 }
 
 // ── Public API ───────────────────────────────────────────────────────────────
 
-/**
- * Set the callback invoked when an async result arrives (triggers canvas redraw).
- */
 export function setSpiralWorkerCallback(cb: () => void) {
   onUpdateCallback = cb;
 }
 
 /**
  * Request spiral computation for a path. Returns cached result immediately
- * (possibly stale) and dispatches async computation to the best available backend.
+ * (possibly stale) and dispatches async computation if needed.
  *
- * - Cache hit (fingerprint matches): return instantly, no dispatch.
- * - Cache miss, stale entry exists: return stale data (1-frame latency),
- *   dispatch async → result triggers redraw via callback.
- * - Cache miss, no entry (first render): compute synchronously so the
- *   first frame is never blank, then cache the result.
+ * Key invariant: at most ONE in-flight request per path. This prevents
+ * flooding the GPU/worker and ensures results are never discarded due to
+ * id mismatch races.
  */
 export function computeSpiral(
   pathId: string,
-  nodes: { x: number; y: number; handleIn: { x: number; y: number }; handleOut: { x: number; y: number } }[],
+  nodes: NodeArg,
   closed: boolean,
   numSamples: number,
   spiral: BezierSpiralConfig,
@@ -255,42 +249,39 @@ export function computeSpiral(
   const fp = spiralFingerprint(nodes, closed, numSamples, spiral);
   const cached = cache.get(pathId);
 
-  // Cache hit — return immediately, nothing to do
+  // Cache hit — return immediately
   if (cached && cached.fingerprint === fp) {
     return cached.pts;
   }
 
-  // ── Dispatch async computation ───────────────────────────────────────────
+  // ── Async dispatch (if not already in-flight for this path) ──────────────
 
-  const id = nextRequestId++;
-  pending.set(pathId, { id, pathId, fingerprint: fp });
+  if (!inflight.has(pathId)) {
+    inflight.set(pathId, fp);
 
-  if (_backend === "gpu") {
-    dispatchGPU(id, pathId, nodes, closed, numSamples, spiral);
-  } else if (_backend === "worker") {
-    const rawNodes = structuredClone(toRaw(nodes));
-    const rawSpiral = structuredClone(toRaw(spiral));
-    dispatchWorkerOrSync(id, pathId, rawNodes, closed, numSamples, rawSpiral);
-  } else if (_backend === "sync") {
-    // Sync backend: compute immediately
-    const samples = sampleBezierPath(nodes, closed, numSamples);
-    const luts = buildSpiralLUTs(spiral);
-    const pts = generateSpiralPoints(samples, spiral, luts);
-    cache.set(pathId, { pts, fingerprint: fp });
-    return pts;
-  } else {
-    // Backend not yet resolved — use worker or sync for now
-    const rawNodes = structuredClone(toRaw(nodes));
-    const rawSpiral = structuredClone(toRaw(spiral));
-    dispatchWorkerOrSync(id, pathId, rawNodes, closed, numSamples, rawSpiral);
+    if (_backend === "gpu") {
+      dispatchGPU(pathId, nodes, closed, numSamples, spiral);
+    } else if (_backend === "worker") {
+      dispatchWorker(pathId, nodes, closed, numSamples, spiral);
+    } else if (_backend === "sync") {
+      inflight.delete(pathId);
+      const samples = sampleBezierPath(nodes, closed, numSamples);
+      const luts = buildSpiralLUTs(spiral);
+      const pts = generateSpiralPoints(samples, spiral, luts);
+      cache.set(pathId, { pts, fingerprint: fp });
+      return pts;
+    } else {
+      // Backend not yet resolved — worker or sync for now
+      dispatchWorker(pathId, nodes, closed, numSamples, spiral);
+    }
   }
 
-  // Stale cache exists — return previous result (non-blocking, 1-frame latency)
+  // Return stale cache while async computes (1-frame latency)
   if (cached) {
     return cached.pts;
   }
 
-  // No cache at all (first render) — compute synchronously to avoid blank frame
+  // No cache at all (first render) — sync fallback so first frame isn't blank
   const samples = sampleBezierPath(nodes, closed, numSamples);
   const luts = buildSpiralLUTs(spiral);
   const pts = generateSpiralPoints(samples, spiral, luts);
@@ -298,22 +289,16 @@ export function computeSpiral(
   return pts;
 }
 
-/**
- * Evict cache entries for paths that no longer exist.
- */
 export function evictSpiralCache(activePathIds: Set<string>) {
   for (const key of cache.keys()) {
     if (!activePathIds.has(key)) {
       cache.delete(key);
-      pending.delete(key);
+      inflight.delete(key);
     }
   }
 }
 
-/**
- * Clear all cached spiral data.
- */
 export function clearSpiralCache() {
   cache.clear();
-  pending.clear();
+  inflight.clear();
 }
