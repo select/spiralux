@@ -32,12 +32,12 @@ let travelCtx: CanvasRenderingContext2D | null = null;
 
 // Compact mode: 56px tall (matches prop curve thumbnails)
 // Expanded mode: 72px tall with more padding
-const TRAVEL_H = computed(() => props.expanded ? 72 : 56);
+const TRAVEL_H = computed(() => props.expanded ? 100 : 56);
 const TRAVEL_PAD_L = 12;
 const TRAVEL_PAD_R = 12;
 const TRAVEL_PAD_T = computed(() => props.expanded ? 8 : 6);
-const TRAVEL_PAD_B = computed(() => props.expanded ? 14 : 12);
-const PREVIEW_R = computed(() => props.expanded ? 18 : 14);
+const TRAVEL_PAD_B = computed(() => props.expanded ? 8 : 12);
+const PREVIEW_R = computed(() => props.expanded ? 36 : 14);
 const HIT_R = 16;
 
 function travelW(): number { return travelEl.value?.getBoundingClientRect().width ?? 200; }
