@@ -108,7 +108,7 @@ function spiralFingerprint(
     for (const dp of spiral.deformation) {
       parts.push(dp.t, dp.nodes.length);
       for (const sn of dp.nodes) {
-        parts.push(sn.x, sn.y);
+        parts.push(sn.x, sn.y, sn.handleIn.dx, sn.handleIn.dy, sn.handleOut.dx, sn.handleOut.dy);
       }
     }
   }
