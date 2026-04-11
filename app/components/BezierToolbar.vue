@@ -38,7 +38,6 @@ const {
   renamePath,
   togglePathVisible,
   movePathOrder,
-  showSpines,
   spiralBlendMode,
   BLEND_MODES,
   downloadProject,
@@ -175,7 +174,7 @@ function onDragEnd() {
         data-tip="Node tool (N) — edit nodes &amp; handles"
         @click="activeTool = 'node'"
       >
-        <i class="i-mdi-vector-point text-lg" />
+        <i class="i-mdi-vector-curve text-lg" />
       </button>
 
       <div class="divider" />
@@ -297,11 +296,7 @@ function onDragEnd() {
         <i class="i-mdi-delete-sweep text-lg" />
       </button>
 
-      <div v-if="activeTool === 'node'" class="divider" />
 
-      <button v-if="activeTool === 'node'" class="tb" :class="{ 'tb-active': !showSpines }" data-tip="Hide/show spines (H)" @click="showSpines = !showSpines">
-        <i class="i-mdi-vector-curve text-lg" />
-      </button>
 
       <select
         class="h-7 text-[10px] bg-elevated/50 border border-border/40 rounded px-1 text-primary cursor-pointer"

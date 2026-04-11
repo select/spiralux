@@ -28,7 +28,6 @@ const {
   pushUndo,
   undo,
   redo,
-  showSpines,
   spiralBlendMode,
   toolbarDock,
   propsDock,
@@ -201,7 +200,7 @@ function _drawImmediate() {
   const view: CanvasView = { panX: panX.value, panY: panY.value, zoom: zoom.value };
 
   renderPaths(c, paths as unknown as Parameters<typeof renderPaths>[1], activePathIndex.value, view, {
-    showSpines: activeTool.value === 'select' ? false : showSpines.value,
+    showSpines: activeTool.value === 'node',
     blendMode: spiralBlendMode.value,
     selectedIds: selectedIds,
     hoveredId: hoveredId.value,
@@ -512,9 +511,7 @@ function onKeydown(e: KeyboardEvent) {
       break;
     case "Escape":
       deselectAll(); draw(); break;
-    case "h": case "H":
-      if (!e.ctrlKey && !e.metaKey && activeTool.value === "node") { showSpines.value = !showSpines.value; draw(); }
-      break;
+
     case "s":
       if (!e.ctrlKey && !e.metaKey) { activeTool.value = "select"; }
       break;
@@ -533,7 +530,7 @@ function fitCanvas() {
 // Redraw on any path data change (active or inactive)
 watch(paths, () => draw(), { deep: true });
 watch(activePathIndex, () => draw());
-watch(showSpines, () => draw());
+watch(spiralBlendMode, () => draw());
 watch(activeTool, () => draw());
 watch(spiralBlendMode, () => draw());
 watch(spiralCursorT, () => draw());
