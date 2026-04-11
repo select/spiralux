@@ -340,35 +340,35 @@ function sampleDeformShape(nodes: DeformShapeNode[], angle: number): { x: number
   };
 }
 
-/** Linearly interpolate two deform-shape node arrays (must have same length). */
-function lerpDeformNodes(a: DeformShapeNode[], b: DeformShapeNode[], blend: number): DeformShapeNode[] {
-  if (a.length !== b.length) return blend < 0.5 ? a : b;
-  const m = 1 - blend;
-  return a.map((na, i) => {
-    const nb = b[i]!;
-    return {
-      id: na.id,
-      x: na.x * m + nb.x * blend,
-      y: na.y * m + nb.y * blend,
-      handleIn:  { dx: na.handleIn.dx  * m + nb.handleIn.dx  * blend, dy: na.handleIn.dy  * m + nb.handleIn.dy  * blend },
-      handleOut: { dx: na.handleOut.dx * m + nb.handleOut.dx * blend, dy: na.handleOut.dy * m + nb.handleOut.dy * blend },
-    };
-  });
-}
-
 /**
- * Get the interpolated deformation shape at a given backbone-t.
- * Finds the two bracketing DeformPoints and lerps between them.
- * Returns null when deformation array is empty / undefined.
+ * Sample the deformation cross-section at backbone position `t` and spiral
+ * angle `angle`.  Finds the two bracketing DeformPoints, samples each shape
+ * independently at the angle, then linearly interpolates the resulting 2-D
+ * points.  Works regardless of whether the two shapes have the same number
+ * of nodes.
+ *
+ * Returns null when deformation is empty / undefined (caller should fall
+ * back to legacy elliptic + orientation).
  */
-function getDeformShapeAtT(deformation: DeformPoint[] | undefined, t: number): DeformShapeNode[] | null {
+function sampleDeformAtT(
+  deformation: DeformPoint[] | undefined,
+  t: number,
+  angle: number,
+): { x: number; y: number } | null {
   if (!deformation || deformation.length === 0) return null;
-  if (deformation.length === 1) return deformation[0]!.nodes;
 
-  // Clamp to first/last
-  if (t <= deformation[0]!.t) return deformation[0]!.nodes;
+  if (deformation.length === 1) {
+    return sampleDeformShape(deformation[0]!.nodes, angle);
+  }
+
+  // Clamp to first / last
+  if (t <= deformation[0]!.t) {
+    return sampleDeformShape(deformation[0]!.nodes, angle);
+  }
   const last = deformation[deformation.length - 1]!;
-  if (t >= last.t) return last.nodes;
+  if (t >= last.t) {
+    return sampleDeformShape(last.nodes, angle);
+  }
 
   // Find bracketing pair
   for (let i = 0; i < deformation.length - 1; i++) {
@@ -377,10 +377,13 @@ function getDeformShapeAtT(deformation: DeformPoint[] | undefined, t: number): D
     if (t >= a.t && t <= b.t) {
       const span = b.t - a.t;
       const blend = span > 0 ? (t - a.t) / span : 0;
-      return lerpDeformNodes(a.nodes, b.nodes, blend);
+      const pa = sampleDeformShape(a.nodes, angle);
+      const pb = sampleDeformShape(b.nodes, angle);
+      const m = 1 - blend;
+      return { x: pa.x * m + pb.x * blend, y: pa.y * m + pb.y * blend };
     }
   }
-  return last.nodes;
+  return sampleDeformShape(last.nodes, angle);
 }
 
 // ── Spiral generation ────────────────────────────────────────────────────────
@@ -413,12 +416,14 @@ export function generateSpiralPoints(
     let rotT: number;
     let rotN: number;
 
-    if (hasDeform) {
+    const deformPt = hasDeform
+      ? sampleDeformAtT(config.deformation, t, cumulativeAngle)
+      : null;
+
+    if (deformPt) {
       // Deformation shape replaces elliptic + orientation
-      const shape = getDeformShapeAtT(config.deformation, t)!;
-      const pt = sampleDeformShape(shape, cumulativeAngle);
-      rotT = radius * pt.x;
-      rotN = radius * pt.y;
+      rotT = radius * deformPt.x;
+      rotN = radius * deformPt.y;
     } else {
       // Legacy: elliptic + orientation property curves
       const elliptic = evaluatePropCurve(config.elliptic, t);
