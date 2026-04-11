@@ -396,7 +396,6 @@ export function generateSpiralPoints(
 
   const points: Vec2[] = [];
   let cumulativeAngle = 0;
-  const hasDeform = config.deformation && config.deformation.length > 0;
 
   for (let i = 0; i < samples.length; i++) {
     const s = samples[i]!;
@@ -413,31 +412,9 @@ export function generateSpiralPoints(
       cumulativeAngle += freq * ds * 0.05;
     }
 
-    let rotT: number;
-    let rotN: number;
-
-    const deformPt = hasDeform
-      ? sampleDeformAtT(config.deformation, t, cumulativeAngle)
-      : null;
-
-    if (deformPt) {
-      // Deformation shape replaces elliptic + orientation
-      rotT = radius * deformPt.x;
-      rotN = radius * deformPt.y;
-    } else {
-      // Legacy: elliptic + orientation property curves
-      const elliptic = evaluatePropCurve(config.elliptic, t);
-      const orientDeg = evaluatePropCurve(config.orientation, t);
-      const sinA = Math.sin(cumulativeAngle);
-      const cosA = Math.cos(cumulativeAngle);
-      let localT = radius * cosA;
-      let localN = radius * elliptic * sinA;
-      const orientRad = (orientDeg * Math.PI) / 180;
-      const cosO = Math.cos(orientRad);
-      const sinO = Math.sin(orientRad);
-      rotT = localT * cosO - localN * sinO;
-      rotN = localT * sinO + localN * cosO;
-    }
+    const deformPt = sampleDeformAtT(config.deformation, t, cumulativeAngle);
+    const rotT = radius * (deformPt?.x ?? Math.cos(cumulativeAngle));
+    const rotN = radius * (deformPt?.y ?? Math.sin(cumulativeAngle));
 
     // Transform to world space
     points.push({

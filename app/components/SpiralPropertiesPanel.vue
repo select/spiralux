@@ -11,7 +11,7 @@ import type { PropCurve } from "~/utils/spiral";
 
 const { path: activePath, pushUndo } = useBezierStore();
 
-type CurveKey = "radius" | "elliptic" | "orientation" | "frequency";
+type CurveKey = "radius" | "frequency";
 type ExpandedKey = CurveKey | "deformation";
 
 // null = all compact thumbnails; a key = that editor is fullscreen
