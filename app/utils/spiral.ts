@@ -5,6 +5,9 @@
 
 import type { BezierNode, Vec2 } from "~/composables/useBezierStore";
 
+/** Minimal node shape needed for bezier evaluation (no id required). */
+type BezNode = Pick<BezierNode, 'x' | 'y' | 'handleIn' | 'handleOut'>;
+
 // ── Property curve data model ────────────────────────────────────────────────
 
 export interface PropNode {
@@ -229,7 +232,7 @@ export interface PathSample {
   t: number;  // 0–1 parametric position along entire path
 }
 
-function evalCubic(a: BezierNode, b: BezierNode, u: number): Vec2 {
+function evalCubic(a: BezNode, b: BezNode, u: number): Vec2 {
   const mu = 1 - u;
   return {
     x: mu * mu * mu * a.x + 3 * mu * mu * u * (a.x + a.handleOut.x) + 3 * mu * u * u * (b.x + b.handleIn.x) + u * u * u * b.x,
@@ -237,7 +240,7 @@ function evalCubic(a: BezierNode, b: BezierNode, u: number): Vec2 {
   };
 }
 
-function evalCubicDerivative(a: BezierNode, b: BezierNode, u: number): Vec2 {
+function evalCubicDerivative(a: BezNode, b: BezNode, u: number): Vec2 {
   const mu = 1 - u;
   const p0x = a.x, p1x = a.x + a.handleOut.x, p2x = b.x + b.handleIn.x, p3x = b.x;
   const p0y = a.y, p1y = a.y + a.handleOut.y, p2y = b.y + b.handleIn.y, p3y = b.y;
@@ -248,7 +251,7 @@ function evalCubicDerivative(a: BezierNode, b: BezierNode, u: number): Vec2 {
 }
 
 export function sampleBezierPath(
-  nodes: BezierNode[],
+  nodes: BezNode[],
   closed: boolean,
   numSamples: number,
 ): PathSample[] {

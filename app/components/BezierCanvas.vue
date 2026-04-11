@@ -86,7 +86,7 @@ type DragTarget =
 
 let dragTarget: DragTarget = null;
 let dragStartPos: Vec2 = { x: 0, y: 0 };
-let dragNodeStartPositions: Map<string, { x: number; y: number }> = new Map();
+const dragNodeStartPositions: Map<string, { x: number; y: number }> = new Map();
 let didDrag = false;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -204,7 +204,7 @@ function _drawImmediate() {
 
   const view: CanvasView = { panX: panX.value, panY: panY.value, zoom: zoom.value };
 
-  renderPaths(c, paths as any, activePathIndex.value, view, {
+  renderPaths(c, paths as unknown as Parameters<typeof renderPaths>[1], activePathIndex.value, view, {
     showSpines: showSpines.value,
     blendMode: spiralBlendMode.value,
     selectedIds: selectedIds,

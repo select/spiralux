@@ -29,11 +29,11 @@ function onMouseDown(e: MouseEvent) {
   dragging = true;
   didDrag = false;
 
-  const onMove = (e: MouseEvent) => {
+  const onMove = (ev: MouseEvent) => {
     didDrag = true;
   };
 
-  const onUp = (e: MouseEvent) => {
+  const onUp = (ev: MouseEvent) => {
     dragging = false;
     window.removeEventListener("mousemove", onMove);
     window.removeEventListener("mouseup", onUp);
@@ -43,8 +43,8 @@ function onMouseDown(e: MouseEvent) {
     // Snap to nearest edge based on mouse position
     const vw = window.innerWidth;
     const vh = window.innerHeight;
-    const x = e.clientX;
-    const y = e.clientY;
+    const x = ev.clientX;
+    const y = ev.clientY;
 
     const distTop = y;
     const distBottom = vh - y;

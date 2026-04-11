@@ -2,7 +2,7 @@
  * useCanvasRenderer — shared rendering logic for bezier paths + spirals.
  * Used by both the main BezierCanvas and the Evolution grid cells.
  */
-import type { BezierPath, BezierNode, Vec2 } from "~/composables/useBezierStore";
+import type { BezierNode, Vec2 } from "~/composables/useBezierStore";
 import type { BezierSpiralConfig } from "~/utils/spiral";
 import { sampleBezierPath, generateSpiralPoints } from "~/utils/spiral";
 
@@ -224,11 +224,11 @@ export function renderPaths(
     const p = paths[pi]!;
     if (p.nodes.length === 0 || !p.visible) continue;
     if (showSpines) {
-      drawPathCurves(ctx, p.nodes, p.closed, p.color + "80", 2 / z);
+      drawPathCurves(ctx, p.nodes, p.closed, `${p.color}80`, 2 / z);
       for (const n of p.nodes) {
         ctx.beginPath();
         ctx.arc(n.x, n.y, 3 / z, 0, Math.PI * 2);
-        ctx.fillStyle = p.color + "60";
+        ctx.fillStyle = `${p.color}60`;
         ctx.fill();
       }
     }

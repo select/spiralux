@@ -51,7 +51,7 @@ const {
 const { THEMES, applyTheme, getCurrentTheme } = await import('~/utils/themes');
 const currentThemeId = ref(getCurrentTheme().id);
 function switchTheme(id: string) {
-  const theme = THEMES.find((t: any) => t.id === id);
+  const theme = THEMES.find((t: Theme) => t.id === id);
   if (!theme) return;
   applyTheme(theme);
   currentThemeId.value = id;

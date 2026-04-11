@@ -609,7 +609,7 @@ function onMove(e: MouseEvent) {
     const n = curve.nodes[drag.idx]!;
     const nx = tToX(n.t);
     const ny = valToY(n.value);
-    let dt = (x - nx) / gW;
+    const dt = (x - nx) / gW;
     let dv = -(y - ny) / (gH / range);
 
     // Snap handle to 0° (horizontal) when close

@@ -493,29 +493,29 @@ function insertNodeOnSegment(segIdx: number, t = 0.5): BezierNode | null {
   if (!path.value) return null;
   if (segIdx < 0 || segIdx >= segmentCount()) return null;
   pushUndo();
-  const a = path.value.nodes[segIdx]!;
-  const b = path.value.nodes[(segIdx + 1) % path.value.nodes.length]!;
+  const nodeA = path.value.nodes[segIdx]!;
+  const nodeB = path.value.nodes[(segIdx + 1) % path.value.nodes.length]!;
 
-  const p0: Vec2 = { x: a.x, y: a.y };
-  const p1: Vec2 = { x: a.x + a.handleOut.x, y: a.y + a.handleOut.y };
-  const p2: Vec2 = { x: b.x + b.handleIn.x, y: b.y + b.handleIn.y };
-  const p3: Vec2 = { x: b.x, y: b.y };
+  const p0: Vec2 = { x: nodeA.x, y: nodeA.y };
+  const p1: Vec2 = { x: nodeA.x + nodeA.handleOut.x, y: nodeA.y + nodeA.handleOut.y };
+  const p2: Vec2 = { x: nodeB.x + nodeB.handleIn.x, y: nodeB.y + nodeB.handleIn.y };
+  const p3: Vec2 = { x: nodeB.x, y: nodeB.y };
 
-  const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
-  const lerpV = (a: Vec2, b: Vec2, t: number): Vec2 => ({
-    x: lerp(a.x, b.x, t),
-    y: lerp(a.y, b.y, t),
+  const mix = (v0: number, v1: number, u: number) => v0 + (v1 - v0) * u;
+  const mixV = (v0: Vec2, v1: Vec2, u: number): Vec2 => ({
+    x: mix(v0.x, v1.x, u),
+    y: mix(v0.y, v1.y, u),
   });
 
-  const q0 = lerpV(p0, p1, t);
-  const q1 = lerpV(p1, p2, t);
-  const q2 = lerpV(p2, p3, t);
-  const r0 = lerpV(q0, q1, t);
-  const r1 = lerpV(q1, q2, t);
-  const s = lerpV(r0, r1, t);
+  const q0 = mixV(p0, p1, t);
+  const q1 = mixV(p1, p2, t);
+  const q2 = mixV(p2, p3, t);
+  const r0 = mixV(q0, q1, t);
+  const r1 = mixV(q1, q2, t);
+  const s = mixV(r0, r1, t);
 
-  a.handleOut = { x: q0.x - a.x, y: q0.y - a.y };
-  b.handleIn = { x: q2.x - b.x, y: q2.y - b.y };
+  nodeA.handleOut = { x: q0.x - nodeA.x, y: q0.y - nodeA.y };
+  nodeB.handleIn = { x: q2.x - nodeB.x, y: q2.y - nodeB.y };
 
   const n: BezierNode = {
     id: uid(),
@@ -893,6 +893,7 @@ function uploadProject(): Promise<void> {
         if (!data || !data.version || !data.paths) throw new Error("Invalid project file");
         importProject(data);
       } catch (e) {
+        // eslint-disable-next-line no-console
         console.error("Failed to import project:", e);
       }
       resolve();
@@ -1000,7 +1001,7 @@ function downloadSVG() {
   for (const pd of pathData) {
     if (pd.points.length < 2) continue;
     svg += `  <!-- spiral: ${pd.name} -->\n`;
-    const d = "M" + pd.points.map(p => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" L");
+    const d = `M${pd.points.map(p => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" L")}`;
     const swPx = (pd.lineWidth * 96 / 25.4).toFixed(3);
     svg += `  <path d="${d}" fill="none" stroke="${pd.color}" stroke-width="${swPx}" stroke-opacity="0.85"/>\n`;
   }

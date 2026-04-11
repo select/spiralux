@@ -356,7 +356,7 @@ export function spiralPenPosition(config: SpiralConfig, theta: number): { x: num
 
     // Compute elongation factor
     let elong = 1;
-    if (config.elongation != null) {
+    if (config.elongation !== null && config.elongation !== undefined) {
       if (typeof config.elongation === "number") {
         elong = config.elongation;
       } else if (config.elongation.length >= 2 && config.duration) {
@@ -385,12 +385,12 @@ export function spiralPenPosition(config: SpiralConfig, theta: number): { x: num
     // Rotate from orbit-aligned frame to canvas frame
     const cosOa = Math.cos(oa);
     const sinOa = Math.sin(oa);
-    const lx = radialComp * cosOa - tangentComp * sinOa;
-    const ly = radialComp * sinOa + tangentComp * cosOa;
+    const olx = radialComp * cosOa - tangentComp * sinOa;
+    const oly = radialComp * sinOa + tangentComp * cosOa;
 
     const cx = (config.orbit.cx ?? 0) + orbitR * cosOa;
     const cy = (config.orbit.cy ?? 0) + orbitR * sinOa;
-    return { x: cx + lx, y: cy + ly };
+    return { x: cx + olx, y: cy + oly };
   }
 
   return { x: lx, y: ly };

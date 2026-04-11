@@ -390,7 +390,7 @@ function loadFromEditor() {
 
 const canvasRefs = ref<(HTMLCanvasElement | null)[]>([]);
 
-function setCanvasRef(el: any, idx: number) {
+function setCanvasRef(el: Element | ComponentPublicInstance | null, idx: number) {
   canvasRefs.value[idx] = el as HTMLCanvasElement;
 }
 
