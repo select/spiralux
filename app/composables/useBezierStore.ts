@@ -100,15 +100,17 @@ export interface CanvasTemplate {
 }
 
 export const CANVAS_TEMPLATES: CanvasTemplate[] = [
-  { id: "4-bierdeckel", name: "4 Bierdeckel", url: "/template/4-bierdeckel.svg" },
+  { id: "4-bierdeckel", name: "4 Bierdeckel", url: "template/4-bierdeckel.svg" },
 ];
 
 const templateId = useStorage<string | null>("bezier-template-id", null);
 const templateVisible = useStorage<boolean>("bezier-template-visible", true);
 
-const templateUrl = computed(() =>
-  CANVAS_TEMPLATES.find(t => t.id === templateId.value)?.url ?? null
-);
+const templateUrl = computed(() => {
+  const template = CANVAS_TEMPLATES.find(t => t.id === templateId.value);
+  if (!template) return null;
+  return `${useRuntimeConfig().app.baseURL}${template.url}`;
+});
 
 const BLEND_MODES = [
   "source-over", "screen", "multiply", "overlay",
