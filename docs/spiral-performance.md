@@ -31,9 +31,26 @@ Replace `Vec2[]` with `Float32Array` for spiral point output. Eliminates GC pres
 **C. Web Worker offload**
 Move `sampleBezierPath` + `generateSpiralPoints` to a worker. Prevents blocking the UI thread on redraws. Use transferable buffers so no copy overhead.
 
-### Tier 2 — WebGPU Compute
+### Tier 2 — WebGPU Compute (implemented)
 
 WebGPU ships in all major browsers (Chrome, Firefox, Safari, Edge) as of 2024–2025. The spiral calc is a near-perfect GPU candidate.
+
+**Hybrid CPU/GPU split:**
+- CPU: backbone sampling, ds computation, cumulative angle prefix sum (sequential, fast ~1ms)
+- GPU: per-point LUT sampling, deformation shape evaluation, final coordinate computation (parallel)
+
+This avoids implementing a parallel prefix sum in WGSL while still offloading the expensive per-point work.
+
+**Files:**
+- `app/utils/spiralGPU.ts` — device management, buffer packing, WGSL shader, dispatch + readback
+- `app/composables/useSpiralWorker.ts` — routes to GPU → Worker → sync based on availability
+
+**Backend detection (automatic):**
+```
+WebGPU available? → GPU compute shader (WGSL)  ~1ms for 120k points
+No WebGPU?        → Web Worker (existing JS)    ~20-50ms, off main thread
+No Worker?        → Synchronous CPU              blocks main thread
+```
 
 | Step | GPU-friendliness | Notes |
 |------|-----------------|-------|

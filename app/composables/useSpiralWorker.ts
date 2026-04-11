@@ -1,11 +1,16 @@
 /**
  * useSpiralWorker — singleton composable managing off-thread spiral computation.
  *
+ * Backend priority:
+ *   1. WebGPU compute shader  (if available — massively parallel, ~1ms)
+ *   2. Web Worker             (fallback — same JS, off main thread)
+ *   3. Synchronous CPU        (last resort — blocks main thread)
+ *
  * Architecture:
  * - Maintains a per-path cache of computed spiral point arrays
- * - On path/config change, posts work to the Web Worker
- * - drawPathSpiral reads from cache (1-frame latency on first change)
- * - Falls back to synchronous computation when no cache exists yet
+ * - On path/config change, returns stale cache instantly (non-blocking)
+ *   and dispatches async computation to the active backend
+ * - First render (no cache) computes synchronously to avoid blank frame
  *
  * The worker uses transferable Float32Array buffers for zero-copy transfer.
  */
@@ -13,6 +18,7 @@
 import { toRaw } from "vue";
 import type { SpiralPointArray, BezierSpiralConfig } from "~/utils/spiral";
 import { sampleBezierPath, generateSpiralPoints, buildSpiralLUTs } from "~/utils/spiral";
+import { isWebGPUAvailable, generateSpiralPointsGPU } from "~/utils/spiralGPU";
 import type { SpiralWorkerRequest, SpiralWorkerResponse } from "~/workers/spiral.types";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -39,12 +45,58 @@ const cache = new Map<string, CacheEntry>();
 const pending = new Map<string, PendingRequest>();
 let onUpdateCallback: (() => void) | null = null;
 
+/** Which backend is active. Resolved on first use. */
+type Backend = "gpu" | "worker" | "sync";
+let _backend: Backend | null = null;
+let _backendResolving = false;
+
+// ── Backend detection ────────────────────────────────────────────────────────
+
+async function resolveBackend(): Promise<Backend> {
+  if (_backend) return _backend;
+
+  // Try WebGPU first
+  if (await isWebGPUAvailable()) {
+    _backend = "gpu";
+    console.info("[Spiral] Using WebGPU compute backend");
+    return _backend;
+  }
+
+  // Try Web Worker
+  const w = ensureWorker();
+  if (w) {
+    _backend = "worker";
+    console.info("[Spiral] Using Web Worker backend");
+    return _backend;
+  }
+
+  _backend = "sync";
+  console.info("[Spiral] Using synchronous CPU backend");
+  return _backend;
+}
+
+/**
+ * Kick off backend detection early (called once from BezierCanvas onMounted).
+ * Does not block — just starts the async probe so it's ready by first interaction.
+ */
+export function initSpiralBackend() {
+  if (!_backend && !_backendResolving) {
+    _backendResolving = true;
+    resolveBackend().finally(() => { _backendResolving = false; });
+  }
+}
+
+/**
+ * Returns the currently active backend name (for UI display / debugging).
+ */
+export function getSpiralBackend(): string {
+  return _backend ?? "detecting…";
+}
+
 // ── Fingerprinting ───────────────────────────────────────────────────────────
 
 /**
  * Cheap fingerprint of a spiral config for cache invalidation.
- * Uses node positions/values + deformation point count — doesn't need to be
- * cryptographically strong, just detect meaningful changes.
  */
 function spiralFingerprint(
   nodes: { x: number; y: number; handleIn: { x: number; y: number }; handleOut: { x: number; y: number } }[],
@@ -52,23 +104,19 @@ function spiralFingerprint(
   numSamples: number,
   spiral: BezierSpiralConfig,
 ): string {
-  // Fast fingerprint: sample a few key values
   const parts: (string | number)[] = [
     nodes.length, closed ? 1 : 0, numSamples,
     spiral.lineWidth,
     spiral.deformation?.length ?? 0,
   ];
-  // Path node positions + handles (full precision — truncation causes stale cache hits)
   for (const n of nodes) {
     parts.push(n.x, n.y, n.handleIn.x, n.handleIn.y, n.handleOut.x, n.handleOut.y);
   }
-  // Property curve nodes
   for (const curve of [spiral.radius, spiral.frequency, spiral.elliptic, spiral.orientation]) {
     for (const cn of curve.nodes) {
       parts.push(cn.t, cn.value, cn.handleIn.dt, cn.handleIn.dv, cn.handleOut.dt, cn.handleOut.dv);
     }
   }
-  // Deformation shape summary
   if (spiral.deformation) {
     for (const dp of spiral.deformation) {
       parts.push(dp.t, dp.nodes.length);
@@ -92,16 +140,10 @@ function ensureWorker(): Worker | null {
       { type: "module" },
     );
     worker.onmessage = (e: MessageEvent<SpiralWorkerResponse>) => {
-      const { id, pathId, data, length } = e.data;
-      // Only accept if this is still the latest request for this path.
-      // Request ID comparison ensures ordering — no stale results applied.
-      const pend = pending.get(pathId);
-      if (pend && pend.id === id) {
-        pending.delete(pathId);
-        // Update cache with fresh data + fingerprint
-        cache.set(pathId, { pts: { data, length }, fingerprint: pend.fingerprint });
-        onUpdateCallback?.();
-      }
+      handleAsyncResult(e.data.pathId, e.data.id, {
+        data: e.data.data,
+        length: e.data.length,
+      });
     };
     worker.onerror = (err) => {
       console.warn("[SpiralWorker] error, falling back to sync:", err.message);
@@ -115,10 +157,76 @@ function ensureWorker(): Worker | null {
   }
 }
 
+// ── Shared async result handler ──────────────────────────────────────────────
+
+function handleAsyncResult(pathId: string, requestId: number, pts: SpiralPointArray) {
+  const pend = pending.get(pathId);
+  if (pend && pend.id === requestId) {
+    pending.delete(pathId);
+    cache.set(pathId, { pts, fingerprint: pend.fingerprint });
+    onUpdateCallback?.();
+  }
+}
+
+// ── GPU dispatch ─────────────────────────────────────────────────────────────
+
+function dispatchGPU(
+  requestId: number,
+  pathId: string,
+  nodes: { x: number; y: number; handleIn: { x: number; y: number }; handleOut: { x: number; y: number } }[],
+  closed: boolean,
+  numSamples: number,
+  spiral: BezierSpiralConfig,
+) {
+  // Deep-clone to avoid reactive proxy issues in the async closure
+  const rawNodes = structuredClone(toRaw(nodes));
+  const rawSpiral = structuredClone(toRaw(spiral));
+
+  generateSpiralPointsGPU(rawNodes, closed, numSamples, rawSpiral).then((result) => {
+    if (result) {
+      handleAsyncResult(pathId, requestId, result);
+    } else {
+      // GPU failed — fall back to worker or sync
+      console.warn("[SpiralGPU] dispatch failed, falling back");
+      _backend = ensureWorker() ? "worker" : "sync";
+      dispatchWorkerOrSync(requestId, pathId, rawNodes, closed, numSamples, rawSpiral);
+    }
+  });
+}
+
+// ── Worker / sync dispatch ───────────────────────────────────────────────────
+
+function dispatchWorkerOrSync(
+  requestId: number,
+  pathId: string,
+  nodes: { x: number; y: number; handleIn: { x: number; y: number }; handleOut: { x: number; y: number } }[],
+  closed: boolean,
+  numSamples: number,
+  spiral: BezierSpiralConfig,
+) {
+  const w = ensureWorker();
+  if (w) {
+    const msg: SpiralWorkerRequest = {
+      id: requestId, pathId,
+      nodes: structuredClone(nodes),
+      closed,
+      numSamples,
+      spiral: structuredClone(spiral),
+    };
+    w.postMessage(msg);
+  } else {
+    // Sync fallback — compute immediately
+    const samples = sampleBezierPath(nodes, closed, numSamples);
+    const luts = buildSpiralLUTs(spiral);
+    const pts = generateSpiralPoints(samples, spiral, luts);
+    handleAsyncResult(pathId, requestId, pts);
+  }
+}
+
 // ── Public API ───────────────────────────────────────────────────────────────
 
 /**
- * Set the callback invoked when a worker result arrives (triggers canvas redraw).
+ * Set the callback invoked when an async result arrives (triggers canvas redraw).
  */
 export function setSpiralWorkerCallback(cb: () => void) {
   onUpdateCallback = cb;
@@ -126,11 +234,11 @@ export function setSpiralWorkerCallback(cb: () => void) {
 
 /**
  * Request spiral computation for a path. Returns cached result immediately
- * (possibly stale) and posts work to the Web Worker for async refresh.
+ * (possibly stale) and dispatches async computation to the best available backend.
  *
- * - Cache hit (fingerprint matches): return instantly, no worker post.
+ * - Cache hit (fingerprint matches): return instantly, no dispatch.
  * - Cache miss, stale entry exists: return stale data (1-frame latency),
- *   post to worker → worker result triggers redraw via callback.
+ *   dispatch async → result triggers redraw via callback.
  * - Cache miss, no entry (first render): compute synchronously so the
  *   first frame is never blank, then cache the result.
  */
@@ -152,38 +260,37 @@ export function computeSpiral(
     return cached.pts;
   }
 
-  // Post to worker for async computation
-  const w = ensureWorker();
-  if (w) {
-    const id = nextRequestId++;
-    pending.set(pathId, { id, pathId, fingerprint: fp });
-    // toRaw strips the Vue reactive Proxy; structuredClone deep-copies for the worker
-    const msg: SpiralWorkerRequest = {
-      id, pathId,
-      nodes: structuredClone(toRaw(nodes)),
-      closed,
-      numSamples,
-      spiral: structuredClone(toRaw(spiral)),
-    };
-    w.postMessage(msg);
-  }
+  // ── Dispatch async computation ───────────────────────────────────────────
 
-  // Stale cache exists — return previous result (1-frame latency, non-blocking)
-  if (cached) {
-    return cached.pts;
-  }
+  const id = nextRequestId++;
+  pending.set(pathId, { id, pathId, fingerprint: fp });
 
-  // No cache at all (first render) — compute synchronously so we don't show blank
-  if (!w) {
-    // No worker available — always compute synchronously
+  if (_backend === "gpu") {
+    dispatchGPU(id, pathId, nodes, closed, numSamples, spiral);
+  } else if (_backend === "worker") {
+    const rawNodes = structuredClone(toRaw(nodes));
+    const rawSpiral = structuredClone(toRaw(spiral));
+    dispatchWorkerOrSync(id, pathId, rawNodes, closed, numSamples, rawSpiral);
+  } else if (_backend === "sync") {
+    // Sync backend: compute immediately
     const samples = sampleBezierPath(nodes, closed, numSamples);
     const luts = buildSpiralLUTs(spiral);
     const pts = generateSpiralPoints(samples, spiral, luts);
     cache.set(pathId, { pts, fingerprint: fp });
     return pts;
+  } else {
+    // Backend not yet resolved — use worker or sync for now
+    const rawNodes = structuredClone(toRaw(nodes));
+    const rawSpiral = structuredClone(toRaw(spiral));
+    dispatchWorkerOrSync(id, pathId, rawNodes, closed, numSamples, rawSpiral);
   }
 
-  // Worker is running but no cached data yet — compute sync for first frame only
+  // Stale cache exists — return previous result (non-blocking, 1-frame latency)
+  if (cached) {
+    return cached.pts;
+  }
+
+  // No cache at all (first render) — compute synchronously to avoid blank frame
   const samples = sampleBezierPath(nodes, closed, numSamples);
   const luts = buildSpiralLUTs(spiral);
   const pts = generateSpiralPoints(samples, spiral, luts);
