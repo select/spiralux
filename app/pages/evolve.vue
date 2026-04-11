@@ -408,7 +408,7 @@ function reconstructSpiralConfig(s: ProjectData["paths"][0]["spiral"]): BezierSp
       nodes: src.nodes.map(n => ({ id: n.id, t: n.t, value: n.value, handleIn: { ...n.handleIn }, handleOut: { ...n.handleOut } })),
     };
   }
-  return { enabled: s.enabled, lineWidth: s.lineWidth ?? 0.3, radius: toCurve("radius"), elliptic: toCurve("elliptic"),
+  return { enabled: s.enabled, lineWidth: s.lineWidth ?? 0.3, rotation: (s as any).rotation ?? 0, scale: (s as any).scale ?? 1, radius: toCurve("radius"), elliptic: toCurve("elliptic"),
     orientation: toCurve("orientation"), frequency: toCurve("frequency"), deformation: s.deformation ?? [] };
 }
 

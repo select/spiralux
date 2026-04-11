@@ -256,6 +256,10 @@ export interface BezierSpiralConfig {
   enabled: boolean;
   /** Stroke width in millimetres */
   lineWidth: number;
+  /** Global rotation offset in degrees (applied to all coils) */
+  rotation: number;
+  /** Global scale multiplier (1 = normal, applied to radius) */
+  scale: number;
   radius: PropCurve;
   elliptic: PropCurve;
   orientation: PropCurve;
@@ -291,6 +295,8 @@ export function defaultBezierSpiralConfig(): BezierSpiralConfig {
   const cfg: BezierSpiralConfig = {
     enabled: true,
     lineWidth: 0.3,
+    rotation: 0,
+    scale: 1,
     radius: {
       label: "Radius",
       color: "#6366f1",
@@ -608,12 +614,14 @@ export function generateSpiralPoints(
   const n = samples.length;
   const data = new Float32Array(n * 2);
   let cumulativeAngle = 0;
+  const globalRotRad = (config.rotation ?? 0) * Math.PI / 180;
+  const globalScale = config.scale ?? 1;
 
   for (let i = 0; i < n; i++) {
     const s = samples[i]!;
     const t = s.t;
 
-    const radius = samplePropLUT(radiusLUT, t);
+    const radius = samplePropLUT(radiusLUT, t) * globalScale;
     const freq = samplePropLUT(freqLUT, t);
 
     if (i > 0) {
@@ -624,9 +632,10 @@ export function generateSpiralPoints(
       cumulativeAngle += freq * ds * 0.05;
     }
 
-    const deformPt = sampleDeformAtT(config.deformation, t, cumulativeAngle);
-    const rotT = radius * (deformPt?.x ?? Math.cos(cumulativeAngle));
-    const rotN = radius * (deformPt?.y ?? Math.sin(cumulativeAngle));
+    const angle = cumulativeAngle + globalRotRad;
+    const deformPt = sampleDeformAtT(config.deformation, t, angle);
+    const rotT = radius * (deformPt?.x ?? Math.cos(angle));
+    const rotN = radius * (deformPt?.y ?? Math.sin(angle));
 
     // Transform to world space
     data[i * 2] = s.x + rotT * s.nx + rotN * s.tx;

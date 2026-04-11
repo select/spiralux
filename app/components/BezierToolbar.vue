@@ -34,6 +34,7 @@ const {
   duplicatePath,
   setPathColor,
   toolbarDock,
+  activeTool,
   renamePath,
   togglePathVisible,
   movePathOrder,
@@ -156,6 +157,26 @@ function onDragEnd() {
         </Transition>
         <div v-if="showNav" class="fixed inset-0 z-40" @click="showNav = false" />
       </div>
+
+      <div class="divider" />
+
+      <!-- Tool switcher (Selector / Node) -->
+      <button
+        class="tb"
+        :class="{ 'tb-active': activeTool === 'select' }"
+        data-tip="Select tool (S) — move paths"
+        @click="activeTool = 'select'"
+      >
+        <i class="i-mdi-cursor-default-outline text-lg" />
+      </button>
+      <button
+        class="tb"
+        :class="{ 'tb-active': activeTool === 'node' }"
+        data-tip="Node tool (N) — edit nodes &amp; handles"
+        @click="activeTool = 'node'"
+      >
+        <i class="i-mdi-vector-point text-lg" />
+      </button>
 
       <div class="divider" />
 

@@ -94,6 +94,8 @@ function spiralFingerprint(
   const parts: (string | number)[] = [
     nodes.length, closed ? 1 : 0, numSamples,
     spiral.lineWidth,
+    spiral.rotation ?? 0,
+    spiral.scale ?? 1,
     spiral.deformation?.length ?? 0,
   ];
   for (const n of nodes) {

@@ -88,6 +88,10 @@ const toolbarDock = useStorage<DockPosition>("bezier-toolbar-dock", "bottom");
 const propsDock = useStorage<DockPosition>("bezier-props-dock", "top");
 const showSpines = ref(true);
 
+/** Active editing tool: 'select' (whole-path) or 'node' (individual nodes/handles) */
+export type EditTool = "select" | "node";
+const activeTool = ref<EditTool>("node");
+
 /** Arc-length t (0–1) of the property-curve node currently selected in the spiral panel */
 const spiralCursorT = ref<number | null>(null);
 
@@ -253,6 +257,8 @@ interface DeformPointSnap {
 interface SpiralSnap {
   enabled: boolean;
   lineWidth: number;
+  rotation: number;
+  scale: number;
   radius: PropCurveSnap;
   elliptic: PropCurveSnap;
   orientation: PropCurveSnap;
@@ -298,6 +304,8 @@ function snapSpiral(s: BezierSpiralConfig): SpiralSnap {
   return {
     enabled: s.enabled,
     lineWidth: s.lineWidth,
+    rotation: s.rotation ?? 0,
+    scale: s.scale ?? 1,
     radius: snapPropCurve(s.radius),
     elliptic: snapPropCurve(s.elliptic),
     orientation: snapPropCurve(s.orientation),
@@ -339,6 +347,8 @@ function applySnapshot(snap: Snapshot) {
     const sp = defaultBezierSpiralConfig();
     sp.enabled = ps.spiral.enabled;
     sp.lineWidth = ps.spiral.lineWidth ?? 0.3;
+    sp.rotation = ps.spiral.rotation ?? 0;
+    sp.scale = ps.spiral.scale ?? 1;
     restorePropCurve(sp.radius, ps.spiral.radius);
     restorePropCurve(sp.elliptic, ps.spiral.elliptic);
     restorePropCurve(sp.orientation, ps.spiral.orientation);
@@ -785,6 +795,8 @@ function importProject(data: ProjectData) {
     const sp = defaultBezierSpiralConfig();
     sp.enabled = ps.spiral.enabled;
     sp.lineWidth = ps.spiral.lineWidth ?? 0.3;
+    sp.rotation = (ps.spiral as Record<string, any>).rotation ?? 0;
+    sp.scale = (ps.spiral as Record<string, any>).scale ?? 1;
     for (const key of ["radius", "elliptic", "orientation", "frequency"] as const) {
       const src = ps.spiral[key];
       if (!src) continue;
@@ -1083,6 +1095,7 @@ export function useBezierStore() {
     symmetrizeHandles,
 
     // Layout
+    activeTool,
     toolbarDock,
     propsDock,
     showSpines,

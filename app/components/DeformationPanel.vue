@@ -250,9 +250,6 @@ const shapeCY = computed(() => SHAPE_SIZE / 2 + shapeNav.panY.value);
 
 const selectedShapeNodeIdx = ref<number>(-1);
 
-/** Tracks the current mouse position during rotation drag for visual feedback */
-const rotatingMousePos = ref<{ x: number; y: number } | null>(null);
-
 function shapeToCanvas(x: number, y: number): { cx: number; cy: number } {
   return { cx: shapeCX.value + x * shapeScale.value, cy: shapeCY.value + y * shapeScale.value };
 }
@@ -263,6 +260,9 @@ function canvasToShape(cx: number, cy: number): { x: number; y: number } {
 
 function onShapeWheel(e: WheelEvent) {
   e.preventDefault();
+  // Alt+scroll = scale shape
+  if (shapeTransform.onWheel(e)) return;
+  // Normal scroll = zoom/pan canvas
   const rect = shapeEl.value!.getBoundingClientRect();
   const cx = e.clientX - rect.left;
   const cy = e.clientY - rect.top;
@@ -365,9 +365,10 @@ function drawShape() {
   }
 
   // Rotation indicator (visible during alt+drag)
-  if (rotatingMousePos.value) {
-    const mx = rotatingMousePos.value.x;
-    const my = rotatingMousePos.value.y;
+  const rPos = shapeTransform.rotatingPos.value;
+  if (rPos) {
+    const mx = rPos.x;
+    const my = rPos.y;
     ctx.beginPath();
     ctx.moveTo(shapeCX.value, shapeCY.value);
     ctx.lineTo(mx, my);
@@ -439,9 +440,43 @@ function hitShapeSegment(mx: number, my: number): number {
 type ShapeDrag = null
   | { kind: "node"; idx: number }
   | { kind: "handleIn"; idx: number }
-  | { kind: "handleOut"; idx: number }
-  | { kind: "rotate"; startAngle: number };
+  | { kind: "handleOut"; idx: number };
 let shapeDrag: ShapeDrag = null;
+
+/** Rotate all shape nodes + handles by delta radians around origin */
+function rotateShapeNodes(delta: number) {
+  if (!selectedPoint.value) return;
+  const cosD = Math.cos(delta);
+  const sinD = Math.sin(delta);
+  for (const n of selectedPoint.value.nodes) {
+    const rx = n.x * cosD - n.y * sinD;
+    const ry = n.x * sinD + n.y * cosD;
+    n.x = rx; n.y = ry;
+    const hix = n.handleIn.dx * cosD - n.handleIn.dy * sinD;
+    const hiy = n.handleIn.dx * sinD + n.handleIn.dy * cosD;
+    n.handleIn.dx = hix; n.handleIn.dy = hiy;
+    const hox = n.handleOut.dx * cosD - n.handleOut.dy * sinD;
+    const hoy = n.handleOut.dx * sinD + n.handleOut.dy * cosD;
+    n.handleOut.dx = hox; n.handleOut.dy = hoy;
+  }
+  drawShape(); drawTravel();
+}
+
+/** Scale all shape nodes + handles by factor around origin */
+function scaleShapeNodes(factor: number) {
+  if (!selectedPoint.value) return;
+  for (const n of selectedPoint.value.nodes) {
+    n.x *= factor; n.y *= factor;
+    n.handleIn.dx *= factor; n.handleIn.dy *= factor;
+    n.handleOut.dx *= factor; n.handleOut.dy *= factor;
+  }
+  drawShape(); drawTravel();
+}
+
+const shapeTransform = useCanvasTransform({
+  onRotate(delta) { pushUndo(); rotateShapeNodes(delta); },
+  onScale(factor) { pushUndo(); scaleShapeNodes(factor); },
+});
 
 function getShapePos(e: MouseEvent) {
   const rect = shapeEl.value!.getBoundingClientRect();
@@ -457,11 +492,10 @@ function onShapeDown(e: MouseEvent) {
   if (e.button !== 0 || !selectedPoint.value) return;
   const { x, y } = getShapePos(e);
 
-  // Alt+click on empty area → start rotation
+  // Alt+click → start rotation via transform composable
   if (e.altKey) {
-    const angle = Math.atan2(y - shapeCY.value, x - shapeCX.value);
     pushUndo();
-    shapeDrag = { kind: "rotate", startAngle: angle };
+    shapeTransform.onMouseDown(e, x, y, shapeCX.value, shapeCY.value);
     return;
   }
 
@@ -548,34 +582,14 @@ function onShapeDown(e: MouseEvent) {
 function onShapeMove(e: MouseEvent) {
   // Handle pan drag
   if (shapeNav.movePan(e)) { drawShape(); return; }
+  // Handle rotation via transform composable
+  const sp = getShapePos(e);
+  if (shapeTransform.onMouseMove(sp.x, sp.y)) return;
   if (!shapeDrag || !shapeEl.value || !selectedPoint.value) return;
-  const { x, y } = getShapePos(e);
+  const { x, y } = sp;
   const nodes = selectedPoint.value.nodes;
 
-  if (shapeDrag.kind === "rotate") {
-    rotatingMousePos.value = { x, y };
-    const curAngle = Math.atan2(y - shapeCY.value, x - shapeCX.value);
-    const delta = curAngle - shapeDrag.startAngle;
-    shapeDrag.startAngle = curAngle;
-    const cosD = Math.cos(delta);
-    const sinD = Math.sin(delta);
-    for (const n of nodes) {
-      // Rotate node position around origin
-      const rx = n.x * cosD - n.y * sinD;
-      const ry = n.x * sinD + n.y * cosD;
-      n.x = rx;
-      n.y = ry;
-      // Rotate handles
-      const hix = n.handleIn.dx * cosD - n.handleIn.dy * sinD;
-      const hiy = n.handleIn.dx * sinD + n.handleIn.dy * cosD;
-      n.handleIn.dx = hix;
-      n.handleIn.dy = hiy;
-      const hox = n.handleOut.dx * cosD - n.handleOut.dy * sinD;
-      const hoy = n.handleOut.dx * sinD + n.handleOut.dy * cosD;
-      n.handleOut.dx = hox;
-      n.handleOut.dy = hoy;
-    }
-  } else if (shapeDrag.kind === "node") {
+  if (shapeDrag.kind === "node") {
     const n = nodes[shapeDrag.idx]!;
     const pos = canvasToShape(x, y);
     n.x = pos.x;
@@ -604,9 +618,7 @@ function onShapeMove(e: MouseEvent) {
 
 function onShapeUp() {
   if (shapeNav.endPan()) return;
-  if (shapeDrag?.kind === "rotate") {
-    rotatingMousePos.value = null;
-  }
+  if (shapeTransform.onMouseUp()) return;
   shapeDrag = null;
 }
 
@@ -653,10 +665,14 @@ function fitShapeCanvas() {
 
 // Shape cursor feedback
 function onShapeHover(e: MouseEvent) {
-  if (shapeNav.panning() || shapeDrag) { if (shapeNav.panning()) shapeEl.value!.style.cursor = "grabbing"; return; }
-  const { x, y } = getShapePos(e);
   const el = shapeEl.value;
   if (!el) return;
+  if (shapeNav.panning() || shapeDrag || shapeTransform.isRotating()) {
+    if (shapeNav.panning()) el.style.cursor = "grabbing";
+    else if (shapeTransform.isRotating()) el.style.cursor = "grabbing";
+    return;
+  }
+  const { x, y } = getShapePos(e);
   if (e.altKey) el.style.cursor = "grab";
   else if (hitShapeHandle(x, y)) el.style.cursor = "pointer";
   else if (hitShapeNode(x, y) >= 0) el.style.cursor = "grab";

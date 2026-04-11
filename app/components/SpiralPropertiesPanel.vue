@@ -77,6 +77,31 @@ onUnmounted(() => window.removeEventListener("keydown", onKeydown));
           />
           <span>mm</span>
         </label>
+        <label class="flex items-center gap-1 text-[10px] text-muted">
+          <span>∡</span>
+          <input
+            type="number"
+            min="-360"
+            max="360"
+            step="1"
+            class="w-12 h-5 text-[10px] bg-elevated/50 border border-border/40 rounded px-1 text-primary text-right appearance-none"
+            :value="activePath.spiral.rotation"
+            @change="(e) => { pushUndo(); activePath!.spiral.rotation = parseFloat((e.target as HTMLInputElement).value) || 0; }"
+          />
+          <span>°</span>
+        </label>
+        <label class="flex items-center gap-1 text-[10px] text-muted">
+          <span>✕</span>
+          <input
+            type="number"
+            min="0"
+            max="10"
+            step="0.05"
+            class="w-12 h-5 text-[10px] bg-elevated/50 border border-border/40 rounded px-1 text-primary text-right appearance-none"
+            :value="activePath.spiral.scale"
+            @change="(e) => { pushUndo(); activePath!.spiral.scale = Math.max(0, parseFloat((e.target as HTMLInputElement).value) || 1); }"
+          />
+        </label>
         <span class="text-[9px] text-muted">click a panel to edit</span>
       </div>
 
@@ -173,6 +198,31 @@ onUnmounted(() => window.removeEventListener("keydown", onKeydown));
             @change="(e) => { pushUndo(); activePath!.spiral.lineWidth = Math.max(0.01, parseFloat((e.target as HTMLInputElement).value) || 0.3); }"
           />
           <span>mm</span>
+        </label>
+        <label class="flex items-center gap-1 text-[10px] text-muted shrink-0 cursor-pointer">
+          <span>∡</span>
+          <input
+            type="number"
+            min="-360"
+            max="360"
+            step="1"
+            class="w-12 h-5 text-[10px] bg-elevated/50 border border-border/40 rounded px-1 text-primary text-right appearance-none"
+            :value="activePath.spiral.rotation"
+            @change="(e) => { pushUndo(); activePath!.spiral.rotation = parseFloat((e.target as HTMLInputElement).value) || 0; }"
+          />
+          <span>°</span>
+        </label>
+        <label class="flex items-center gap-1 text-[10px] text-muted shrink-0 cursor-pointer">
+          <span>✕</span>
+          <input
+            type="number"
+            min="0"
+            max="10"
+            step="0.05"
+            class="w-12 h-5 text-[10px] bg-elevated/50 border border-border/40 rounded px-1 text-primary text-right appearance-none"
+            :value="activePath.spiral.scale"
+            @change="(e) => { pushUndo(); activePath!.spiral.scale = Math.max(0, parseFloat((e.target as HTMLInputElement).value) || 1); }"
+          />
         </label>
       </div>
 

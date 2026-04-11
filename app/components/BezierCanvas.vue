@@ -18,6 +18,7 @@ const {
   select,
   toggleSelect,
   deselectAll,
+  selectAll,
   selectRect,
   addNode,
   insertNodeOnSegment,
@@ -34,6 +35,7 @@ const {
   templateUrl,
   templateVisible,
   spiralCursorT,
+  activeTool,
 } = useBezierStore();
 
 const canvasEl = ref<HTMLCanvasElement | null>(null);
@@ -240,6 +242,11 @@ function updateCursor(
     if (dragTarget.kind === "handleIn" || dragTarget.kind === "handleOut") { el.style.cursor = "grabbing"; return; }
     if (dragTarget.kind === "boxSelect") { el.style.cursor = "crosshair"; return; }
   }
+  if (activeTool.value === "select") {
+    if (nodeHit || handleHit) { el.style.cursor = "grab"; return; }
+    el.style.cursor = "default";
+    return;
+  }
   if (handleHit) { el.style.cursor = "pointer"; return; }
   if (nodeHit) { el.style.cursor = "grab"; return; }
   el.style.cursor = "crosshair";
@@ -262,6 +269,55 @@ function onPointerDown(e: MouseEvent) {
   if (nav.startPanIfNeeded(e)) return;
 
   if (e.button !== 0) return;
+
+  // ── Select tool: whole-path select & move ────────────────────────────
+  if (activeTool.value === "select") {
+    // Hit any path (active first, then inactive)
+    const nodeHit = hitTestNode(worldPos.x, worldPos.y);
+    const segHit = hitTestSegment(worldPos.x, worldPos.y);
+    const inactiveHit = hitTestInactivePath(worldPos.x, worldPos.y);
+
+    if (nodeHit || segHit) {
+      // Clicked on active path — select all nodes, prepare to drag
+      const p = ap();
+      if (p) {
+        selectAll();
+        pushUndo();
+        dragTarget = { kind: "node", id: p.nodes[0]?.id ?? "" };
+        dragStartPos = worldPos;
+        dragNodeStartPositions.clear();
+        for (const n of p.nodes) {
+          dragNodeStartPositions.set(n.id, { x: n.x, y: n.y });
+        }
+      }
+      draw();
+      return;
+    }
+
+    if (inactiveHit !== null) {
+      setActivePath(inactiveHit);
+      const p = ap();
+      if (p) {
+        selectAll();
+        pushUndo();
+        dragTarget = { kind: "node", id: p.nodes[0]?.id ?? "" };
+        dragStartPos = worldPos;
+        dragNodeStartPositions.clear();
+        for (const n of p.nodes) {
+          dragNodeStartPositions.set(n.id, { x: n.x, y: n.y });
+        }
+      }
+      draw();
+      return;
+    }
+
+    // Click empty → deselect
+    deselectAll();
+    draw();
+    return;
+  }
+
+  // ── Node tool: individual node/handle editing ────────────────────────
 
   // Check handles on active path
   const handleHit = hitTestHandle(worldPos.x, worldPos.y);
@@ -371,9 +427,17 @@ function onPointerMove(e: MouseEvent) {
 
   // Hover
   const nodeHit = hitTestNode(worldPos.x, worldPos.y);
-  const handleHitHover = hitTestHandle(worldPos.x, worldPos.y);
+  const handleHitHover = activeTool.value === "node" ? hitTestHandle(worldPos.x, worldPos.y) : null;
   if (hoveredId.value !== nodeHit) { hoveredId.value = nodeHit; draw(); }
-  updateCursor(nodeHit, handleHitHover);
+
+  // In select mode, also detect hovering on inactive paths for cursor
+  if (activeTool.value === "select" && !nodeHit) {
+    const inactiveHit = hitTestInactivePath(worldPos.x, worldPos.y);
+    const el = canvasEl.value;
+    if (el) el.style.cursor = inactiveHit !== null ? "grab" : "default";
+  } else {
+    updateCursor(nodeHit, handleHitHover);
+  }
 }
 
 function onPointerUp(e: MouseEvent) {
@@ -402,6 +466,7 @@ function onPointerUp(e: MouseEvent) {
 }
 
 function onDblClick(e: MouseEvent) {
+  if (activeTool.value === "select") return; // no node editing in select mode
   const screenPos = getCanvasPos(e);
   const worldPos = screenToWorld(screenPos.x, screenPos.y);
   const segHit = hitTestSegment(worldPos.x, worldPos.y);
@@ -443,12 +508,18 @@ function onKeydown(e: KeyboardEvent) {
     case "ArrowDown":
       e.preventDefault(); pushUndo(); moveSelected(0, nudge); draw(); break;
     case "a": case "A":
-      if (e.ctrlKey || e.metaKey) { e.preventDefault(); useBezierStore().selectAll(); draw(); }
+      if (e.ctrlKey || e.metaKey) { e.preventDefault(); selectAll(); draw(); }
       break;
     case "Escape":
       deselectAll(); draw(); break;
     case "h": case "H":
       if (!e.ctrlKey && !e.metaKey) { showSpines.value = !showSpines.value; draw(); }
+      break;
+    case "s":
+      if (!e.ctrlKey && !e.metaKey) { activeTool.value = "select"; }
+      break;
+    case "n":
+      if (!e.ctrlKey && !e.metaKey) { activeTool.value = "node"; }
       break;
   }
 }
