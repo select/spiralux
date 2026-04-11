@@ -60,20 +60,13 @@ const HANDLE_RADIUS = 4;
 const HIT_TOLERANCE = 10;
 const SEGMENT_HIT_SAMPLES = 40;
 
-// ── Pan & zoom state ─────────────────────────────────────────────────────────
+// ── Pan & zoom (unified composable) ──────────────────────────────────────────
 
-const panX = ref(0);
-const panY = ref(0);
-const zoom = ref(1);
-let isPanning = false;
-let panStartMouse = { x: 0, y: 0 };
-let panStartOffset = { x: 0, y: 0 };
+const nav = useCanvasNavigation({ scrollZoom: false, panSpeed: 0.3 });
+const { panX, panY, zoom } = nav;
 
 function screenToWorld(sx: number, sy: number): Vec2 {
-  return {
-    x: (sx - panX.value) / zoom.value,
-    y: (sy - panY.value) / zoom.value,
-  };
+  return nav.screenToLocal(sx, sy);
 }
 
 // ── Drag state ───────────────────────────────────────────────────────────────
@@ -241,7 +234,7 @@ function updateCursor(
 ) {
   const el = canvasEl.value;
   if (!el) return;
-  if (isPanning) { el.style.cursor = "grabbing"; return; }
+  if (nav.panning()) { el.style.cursor = "grabbing"; return; }
   if (dragTarget) {
     if (dragTarget.kind === "node") { el.style.cursor = "grabbing"; return; }
     if (dragTarget.kind === "handleIn" || dragTarget.kind === "handleOut") { el.style.cursor = "grabbing"; return; }
@@ -266,13 +259,7 @@ function onPointerDown(e: MouseEvent) {
   didDrag = false;
 
   // Middle mouse / Alt+click for panning
-  if (e.button === 1 || (e.button === 0 && e.altKey)) {
-    isPanning = true;
-    panStartMouse = { x: e.clientX, y: e.clientY };
-    panStartOffset = { x: panX.value, y: panY.value };
-    e.preventDefault();
-    return;
-  }
+  if (nav.startPanIfNeeded(e)) return;
 
   if (e.button !== 0) return;
 
@@ -335,12 +322,7 @@ function onPointerDown(e: MouseEvent) {
 function onPointerMove(e: MouseEvent) {
   if (!canvasEl.value) return;
 
-  if (isPanning) {
-    panX.value = panStartOffset.x + (e.clientX - panStartMouse.x);
-    panY.value = panStartOffset.y + (e.clientY - panStartMouse.y);
-    draw();
-    return;
-  }
+  if (nav.movePan(e)) { draw(); return; }
 
   const screenPos = getCanvasPos(e);
   const worldPos = screenToWorld(screenPos.x, screenPos.y);
@@ -395,7 +377,7 @@ function onPointerMove(e: MouseEvent) {
 }
 
 function onPointerUp(e: MouseEvent) {
-  if (isPanning) { isPanning = false; return; }
+  if (nav.endPan()) return;
   if (e.button !== 0) return;
 
   const screenPos = getCanvasPos(e);
@@ -431,20 +413,9 @@ function onDblClick(e: MouseEvent) {
 }
 
 function onWheel(e: WheelEvent) {
-  if (e.ctrlKey || e.metaKey) {
-    // Ctrl+scroll = zoom (pinch-to-zoom on trackpads)
-    e.preventDefault();
-    const screenPos = getCanvasPos(e);
-    const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
-    const newZoom = Math.max(0.1, Math.min(10, zoom.value * factor));
-    panX.value = screenPos.x - (screenPos.x - panX.value) * (newZoom / zoom.value);
-    panY.value = screenPos.y - (screenPos.y - panY.value) * (newZoom / zoom.value);
-    zoom.value = newZoom;
-  } else {
-    // Scroll = pan canvas
-    panX.value -= e.deltaX * 0.3;
-    panY.value -= e.deltaY * 0.3;
-  }
+  e.preventDefault();
+  const screenPos = getCanvasPos(e);
+  nav.onWheel(e, screenPos.x, screenPos.y);
   draw();
 }
 

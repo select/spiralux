@@ -233,14 +233,20 @@ let shapeCtx: CanvasRenderingContext2D | null = null;
 const SHAPE_SIZE = 240;
 const SHAPE_PAD = 20;
 const BASE_SHAPE_SCALE = (SHAPE_SIZE - SHAPE_PAD * 2) / 2.8; // maps ±1.4 to canvas at zoom=1
-const SHAPE_CX = SHAPE_SIZE / 2;
-const SHAPE_CY = SHAPE_SIZE / 2;
 const SHAPE_NODE_R = 7;
 const SHAPE_HANDLE_R = 5;
 const SHAPE_HIT_R = 12;
 
-const shapeZoom = ref(1);
-const shapeScale = computed(() => BASE_SHAPE_SCALE * shapeZoom.value);
+// Unified pan & zoom for shape editor (scroll-to-zoom, shift+scroll pan, middle-drag pan)
+const shapeNav = useCanvasNavigation({
+  scrollZoom: true,
+  minZoom: 0.1,
+  maxZoom: 10,
+});
+
+const shapeScale = computed(() => BASE_SHAPE_SCALE * shapeNav.zoom.value);
+const shapeCX = computed(() => SHAPE_SIZE / 2 + shapeNav.panX.value);
+const shapeCY = computed(() => SHAPE_SIZE / 2 + shapeNav.panY.value);
 
 const selectedShapeNodeIdx = ref<number>(-1);
 
@@ -248,17 +254,19 @@ const selectedShapeNodeIdx = ref<number>(-1);
 const rotatingMousePos = ref<{ x: number; y: number } | null>(null);
 
 function shapeToCanvas(x: number, y: number): { cx: number; cy: number } {
-  return { cx: SHAPE_CX + x * shapeScale.value, cy: SHAPE_CY + y * shapeScale.value };
+  return { cx: shapeCX.value + x * shapeScale.value, cy: shapeCY.value + y * shapeScale.value };
 }
 
 function canvasToShape(cx: number, cy: number): { x: number; y: number } {
-  return { x: (cx - SHAPE_CX) / shapeScale.value, y: (cy - SHAPE_CY) / shapeScale.value };
+  return { x: (cx - shapeCX.value) / shapeScale.value, y: (cy - shapeCY.value) / shapeScale.value };
 }
 
 function onShapeWheel(e: WheelEvent) {
   e.preventDefault();
-  const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
-  shapeZoom.value = Math.max(0.1, Math.min(10, shapeZoom.value * factor));
+  const rect = shapeEl.value!.getBoundingClientRect();
+  const cx = e.clientX - rect.left;
+  const cy = e.clientY - rect.top;
+  shapeNav.onWheel(e, cx, cy);
   drawShape();
 }
 
@@ -278,9 +286,9 @@ function drawShape() {
   ctx.strokeStyle = "rgba(255,255,255,0.06)";
   ctx.lineWidth = 0.5;
   for (let i = -2; i <= 2; i++) {
-    const gx = SHAPE_CX + i * shapeScale.value * 0.5;
+    const gx = shapeCX.value + i * shapeScale.value * 0.5;
     ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, SHAPE_SIZE); ctx.stroke();
-    const gy = SHAPE_CY + i * shapeScale.value * 0.5;
+    const gy = shapeCY.value + i * shapeScale.value * 0.5;
     ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(SHAPE_SIZE, gy); ctx.stroke();
   }
 
@@ -288,13 +296,13 @@ function drawShape() {
   ctx.strokeStyle = "rgba(255,255,255,0.12)";
   ctx.lineWidth = 0.5;
   ctx.setLineDash([4, 3]);
-  ctx.beginPath(); ctx.moveTo(SHAPE_CX, 0); ctx.lineTo(SHAPE_CX, SHAPE_SIZE); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(0, SHAPE_CY); ctx.lineTo(SHAPE_SIZE, SHAPE_CY); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(shapeCX.value, 0); ctx.lineTo(shapeCX.value, SHAPE_SIZE); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0, shapeCY.value); ctx.lineTo(SHAPE_SIZE, shapeCY.value); ctx.stroke();
   ctx.setLineDash([]);
 
   // Reference unit circle (faint)
   ctx.beginPath();
-  ctx.arc(SHAPE_CX, SHAPE_CY, shapeScale.value, 0, Math.PI * 2);
+  ctx.arc(shapeCX.value, shapeCY.value, shapeScale.value, 0, Math.PI * 2);
   ctx.strokeStyle = "rgba(255,255,255,0.08)";
   ctx.lineWidth = 1;
   ctx.setLineDash([3, 4]);
@@ -303,7 +311,7 @@ function drawShape() {
 
   // Draw closed shape
   if (nodes.length >= 2) {
-    traceShape(ctx, nodes, SHAPE_CX, SHAPE_CY, shapeScale.value);
+    traceShape(ctx, nodes, shapeCX.value, shapeCY.value, shapeScale.value);
     ctx.strokeStyle = "#a855f7";
     ctx.lineWidth = 2;
     ctx.stroke();
@@ -360,7 +368,7 @@ function drawShape() {
     const mx = rotatingMousePos.value.x;
     const my = rotatingMousePos.value.y;
     ctx.beginPath();
-    ctx.moveTo(SHAPE_CX, SHAPE_CY);
+    ctx.moveTo(shapeCX.value, shapeCY.value);
     ctx.lineTo(mx, my);
     ctx.strokeStyle = "rgba(168,85,247,0.6)";
     ctx.lineWidth = 1.5;
@@ -370,7 +378,7 @@ function drawShape() {
 
     // Small circle at center
     ctx.beginPath();
-    ctx.arc(SHAPE_CX, SHAPE_CY, 3, 0, Math.PI * 2);
+    ctx.arc(shapeCX.value, shapeCY.value, 3, 0, Math.PI * 2);
     ctx.fillStyle = "rgba(168,85,247,0.8)";
     ctx.fill();
   }
@@ -440,12 +448,17 @@ function getShapePos(e: MouseEvent) {
 }
 
 function onShapeDown(e: MouseEvent) {
+  // Middle mouse drag for panning
+  if (e.button === 1) {
+    shapeNav.startPanIfNeeded(e);
+    return;
+  }
   if (e.button !== 0 || !selectedPoint.value) return;
   const { x, y } = getShapePos(e);
 
   // Alt+click on empty area → start rotation
   if (e.altKey) {
-    const angle = Math.atan2(y - SHAPE_CY, x - SHAPE_CX);
+    const angle = Math.atan2(y - shapeCY.value, x - shapeCX.value);
     pushUndo();
     shapeDrag = { kind: "rotate", startAngle: angle };
     return;
@@ -532,13 +545,15 @@ function onShapeDown(e: MouseEvent) {
 }
 
 function onShapeMove(e: MouseEvent) {
+  // Handle pan drag
+  if (shapeNav.movePan(e)) { drawShape(); return; }
   if (!shapeDrag || !shapeEl.value || !selectedPoint.value) return;
   const { x, y } = getShapePos(e);
   const nodes = selectedPoint.value.nodes;
 
   if (shapeDrag.kind === "rotate") {
     rotatingMousePos.value = { x, y };
-    const curAngle = Math.atan2(y - SHAPE_CY, x - SHAPE_CX);
+    const curAngle = Math.atan2(y - shapeCY.value, x - shapeCX.value);
     const delta = curAngle - shapeDrag.startAngle;
     shapeDrag.startAngle = curAngle;
     const cosD = Math.cos(delta);
@@ -587,6 +602,7 @@ function onShapeMove(e: MouseEvent) {
 }
 
 function onShapeUp() {
+  if (shapeNav.endPan()) return;
   if (shapeDrag?.kind === "rotate") {
     rotatingMousePos.value = null;
   }
@@ -618,6 +634,7 @@ function resetShape() {
   const newNodes = makeDeformPoint(config.value, selectedPoint.value.t).nodes;
   selectedPoint.value.nodes.splice(0, selectedPoint.value.nodes.length, ...newNodes);
   selectedShapeNodeIdx.value = -1;
+  shapeNav.resetView();
   drawShape();
   drawTravel();
 }
@@ -635,9 +652,10 @@ function fitShapeCanvas() {
 
 // Shape cursor feedback
 function onShapeHover(e: MouseEvent) {
-  if (shapeDrag || !shapeEl.value) return;
+  if (shapeNav.panning() || shapeDrag) { if (shapeNav.panning()) shapeEl.value!.style.cursor = "grabbing"; return; }
   const { x, y } = getShapePos(e);
   const el = shapeEl.value;
+  if (!el) return;
   if (e.altKey) el.style.cursor = "grab";
   else if (hitShapeHandle(x, y)) el.style.cursor = "pointer";
   else if (hitShapeNode(x, y) >= 0) el.style.cursor = "grab";
@@ -650,7 +668,7 @@ function onShapeHover(e: MouseEvent) {
 watch(deformation, () => { drawTravel(); drawShape(); }, { deep: true });
 watch(selectedPoint, () => {
   selectedShapeNodeIdx.value = -1;
-  shapeZoom.value = 1;
+  shapeNav.resetView();
   nextTick(fitShapeCanvas);
 });
 
@@ -890,6 +908,7 @@ watch(selectedIdx, () => { activePresetId.value = null; });
           class="rounded-lg transition-opacity duration-150"
           :class="selectedPoint ? 'opacity-100' : 'opacity-0'"
           @mousedown="onShapeDown"
+          @mousedown.middle.prevent
           @mousemove="onShapeHover"
           @dblclick="onShapeDblClick"
           @contextmenu="onShapeContextMenu"
@@ -900,7 +919,7 @@ watch(selectedIdx, () => { activePresetId.value = null; });
         <span
           class="text-[9px] text-muted px-1 transition-opacity duration-150"
           :style="{ visibility: selectedPoint ? 'visible' : 'hidden' }"
-        >drag nodes · click curve to add · shift for asymmetric · alt+drag to rotate</span>
+        >drag nodes · click curve to add · shift+scroll pan · alt+drag rotate</span>
         </div>
       </div>
     </div>
