@@ -93,17 +93,14 @@ function ensureWorker(): Worker | null {
     );
     worker.onmessage = (e: MessageEvent<SpiralWorkerResponse>) => {
       const { id, pathId, data, length } = e.data;
-      // Only accept if this is still the latest request for this path
-      // AND the cache fingerprint still matches (prevent stale worker results
-      // from overwriting fresher sync-computed data after rapid edits).
+      // Only accept if this is still the latest request for this path.
+      // Request ID comparison ensures ordering — no stale results applied.
       const pend = pending.get(pathId);
       if (pend && pend.id === id) {
         pending.delete(pathId);
-        const existing = cache.get(pathId);
-        if (existing && existing.fingerprint === pend.fingerprint) {
-          existing.pts = { data, length };
-          onUpdateCallback?.();
-        }
+        // Update cache with fresh data + fingerprint
+        cache.set(pathId, { pts: { data, length }, fingerprint: pend.fingerprint });
+        onUpdateCallback?.();
       }
     };
     worker.onerror = (err) => {
@@ -128,8 +125,14 @@ export function setSpiralWorkerCallback(cb: () => void) {
 }
 
 /**
- * Request spiral computation for a path. Returns cached result if fresh,
- * otherwise computes synchronously as fallback and posts to worker for next frame.
+ * Request spiral computation for a path. Returns cached result immediately
+ * (possibly stale) and posts work to the Web Worker for async refresh.
+ *
+ * - Cache hit (fingerprint matches): return instantly, no worker post.
+ * - Cache miss, stale entry exists: return stale data (1-frame latency),
+ *   post to worker → worker result triggers redraw via callback.
+ * - Cache miss, no entry (first render): compute synchronously so the
+ *   first frame is never blank, then cache the result.
  */
 export function computeSpiral(
   pathId: string,
@@ -144,25 +147,17 @@ export function computeSpiral(
   const fp = spiralFingerprint(nodes, closed, numSamples, spiral);
   const cached = cache.get(pathId);
 
-  // Cache hit — return immediately
+  // Cache hit — return immediately, nothing to do
   if (cached && cached.fingerprint === fp) {
     return cached.pts;
   }
 
-  // Cache miss or stale — compute synchronously for this frame
-  const samples = sampleBezierPath(nodes, closed, numSamples);
-  const luts = buildSpiralLUTs(spiral);
-  const pts = generateSpiralPoints(samples, spiral, luts);
-
-  // Update cache
-  cache.set(pathId, { pts, fingerprint: fp });
-
-  // Post to worker for future frames (async, results replace cache on arrival)
+  // Post to worker for async computation
   const w = ensureWorker();
   if (w) {
     const id = nextRequestId++;
     pending.set(pathId, { id, pathId, fingerprint: fp });
-    // toRaw strips the Vue reactive Proxy wrapper; structuredClone deep-copies for the worker
+    // toRaw strips the Vue reactive Proxy; structuredClone deep-copies for the worker
     const msg: SpiralWorkerRequest = {
       id, pathId,
       nodes: structuredClone(toRaw(nodes)),
@@ -173,6 +168,26 @@ export function computeSpiral(
     w.postMessage(msg);
   }
 
+  // Stale cache exists — return previous result (1-frame latency, non-blocking)
+  if (cached) {
+    return cached.pts;
+  }
+
+  // No cache at all (first render) — compute synchronously so we don't show blank
+  if (!w) {
+    // No worker available — always compute synchronously
+    const samples = sampleBezierPath(nodes, closed, numSamples);
+    const luts = buildSpiralLUTs(spiral);
+    const pts = generateSpiralPoints(samples, spiral, luts);
+    cache.set(pathId, { pts, fingerprint: fp });
+    return pts;
+  }
+
+  // Worker is running but no cached data yet — compute sync for first frame only
+  const samples = sampleBezierPath(nodes, closed, numSamples);
+  const luts = buildSpiralLUTs(spiral);
+  const pts = generateSpiralPoints(samples, spiral, luts);
+  cache.set(pathId, { pts, fingerprint: fp });
   return pts;
 }
 
