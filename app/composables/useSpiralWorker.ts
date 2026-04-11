@@ -26,6 +26,8 @@ interface CacheEntry {
 interface PendingRequest {
   id: number;
   pathId: string;
+  /** Fingerprint at the time the request was made */
+  fingerprint: string;
 }
 
 // ── Singleton state ──────────────────────────────────────────────────────────
@@ -55,9 +57,9 @@ function spiralFingerprint(
     spiral.lineWidth,
     spiral.deformation?.length ?? 0,
   ];
-  // Path node positions (first, middle, last)
+  // Path node positions + handles (full precision — truncation causes stale cache hits)
   for (const n of nodes) {
-    parts.push(n.x | 0, n.y | 0, n.handleOut.x | 0, n.handleOut.y | 0);
+    parts.push(n.x, n.y, n.handleIn.x, n.handleIn.y, n.handleOut.x, n.handleOut.y);
   }
   // Property curve nodes
   for (const curve of [spiral.radius, spiral.frequency, spiral.elliptic, spiral.orientation]) {
@@ -91,18 +93,16 @@ function ensureWorker(): Worker | null {
     worker.onmessage = (e: MessageEvent<SpiralWorkerResponse>) => {
       const { id, pathId, data, length } = e.data;
       // Only accept if this is still the latest request for this path
+      // AND the cache fingerprint still matches (prevent stale worker results
+      // from overwriting fresher sync-computed data after rapid edits).
       const pend = pending.get(pathId);
       if (pend && pend.id === id) {
         pending.delete(pathId);
-        // Update cache — recompute fingerprint is not needed, it was set on request
         const existing = cache.get(pathId);
-        if (existing) {
+        if (existing && existing.fingerprint === pend.fingerprint) {
           existing.pts = { data, length };
-        } else {
-          cache.set(pathId, { pts: { data, length }, fingerprint: "" });
+          onUpdateCallback?.();
         }
-        // Trigger canvas redraw
-        onUpdateCallback?.();
       }
     };
     worker.onerror = (err) => {
@@ -160,7 +160,7 @@ export function computeSpiral(
   const w = ensureWorker();
   if (w) {
     const id = nextRequestId++;
-    pending.set(pathId, { id, pathId });
+    pending.set(pathId, { id, pathId, fingerprint: fp });
     const msg: SpiralWorkerRequest = { id, pathId, nodes, closed, numSamples, spiral };
     w.postMessage(msg);
   }
