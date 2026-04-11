@@ -630,7 +630,7 @@ onUnmounted(() => {
 
   <!-- EXPANDED: travel path + shape editor side by side -->
   <template v-else>
-    <div class="flex gap-2 items-start">
+    <div class="flex gap-2 items-center">
       <!-- Travel path (left) -->
       <div class="flex-1 min-w-0 flex flex-col gap-0.5">
         <canvas
