@@ -72,22 +72,164 @@ function screenToWorld(sx: number, sy: number): Vec2 {
 
 // ── Drag state ───────────────────────────────────────────────────────────────
 
+type HandlePos = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
+
 type DragTarget =
   | { kind: "node"; id: string }
   | { kind: "handleIn"; id: string }
   | { kind: "handleOut"; id: string }
   | { kind: "boxSelect"; startX: number; startY: number; curX: number; curY: number }
+  | { kind: "scaleHandle"; pos: HandlePos; bbox: BBox; startMouse: Vec2 }
+  | { kind: "rotateHandle"; pos: HandlePos; bbox: BBox; startAngle: number }
   | null;
 
 let dragTarget: DragTarget = null;
 let dragStartPos: Vec2 = { x: 0, y: 0 };
-const dragNodeStartPositions: Map<string, { x: number; y: number }> = new Map();
+const dragNodeStartPositions: Map<string, { x: number; y: number; hInX: number; hInY: number; hOutX: number; hOutY: number }> = new Map();
 let didDrag = false;
+
+// ── Selector tool state ─────────────────────────────────────────────────────
+
+/** Toggle between scale and rotate handles on re-click */
+type SelectHandleMode = "scale" | "rotate";
+const selectHandleMode = ref<SelectHandleMode>("scale");
+
+interface BBox { minX: number; minY: number; maxX: number; maxY: number }
+
+/** Compute world-space bounding box of the active path's nodes + curve samples */
+function getPathBBox(p: BezierPath): BBox | null {
+  if (p.nodes.length === 0) return null;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const n of p.nodes) {
+    if (n.x < minX) minX = n.x;
+    if (n.y < minY) minY = n.y;
+    if (n.x > maxX) maxX = n.x;
+    if (n.y > maxY) maxY = n.y;
+  }
+  for (let i = 0; i < p.nodes.length - (p.closed ? 0 : 1); i++) {
+    const a = p.nodes[i]!;
+    const b = p.nodes[(i + 1) % p.nodes.length]!;
+    for (let t = 0.25; t <= 0.75; t += 0.25) {
+      const pt = evalCubic(a, b, t);
+      if (pt.x < minX) minX = pt.x;
+      if (pt.y < minY) minY = pt.y;
+      if (pt.x > maxX) maxX = pt.x;
+      if (pt.y > maxY) maxY = pt.y;
+    }
+  }
+  const pad = 4;
+  return { minX: minX - pad, minY: minY - pad, maxX: maxX + pad, maxY: maxY + pad };
+}
+
+function bboxCenter(bb: BBox): Vec2 {
+  return { x: (bb.minX + bb.maxX) / 2, y: (bb.minY + bb.maxY) / 2 };
+}
+
+function bboxHandles(bb: BBox): { pos: HandlePos; x: number; y: number }[] {
+  const cx = (bb.minX + bb.maxX) / 2;
+  const cy = (bb.minY + bb.maxY) / 2;
+  return [
+    { pos: "nw", x: bb.minX, y: bb.minY },
+    { pos: "n",  x: cx,      y: bb.minY },
+    { pos: "ne", x: bb.maxX, y: bb.minY },
+    { pos: "e",  x: bb.maxX, y: cy },
+    { pos: "se", x: bb.maxX, y: bb.maxY },
+    { pos: "s",  x: cx,      y: bb.maxY },
+    { pos: "sw", x: bb.minX, y: bb.maxY },
+    { pos: "w",  x: bb.minX, y: cy },
+  ];
+}
+
+function hitBBoxHandle(sx: number, sy: number, bb: BBox, mode: SelectHandleMode): HandlePos | null {
+  const z = zoom.value;
+  const corners: HandlePos[] = ["nw", "ne", "se", "sw"];
+  const handles = bboxHandles(bb);
+  for (const h of handles) {
+    if (mode === "rotate" && !corners.includes(h.pos)) continue;
+    const hsx = h.x * z + panX.value;
+    const hsy = h.y * z + panY.value;
+    if ((hsx - sx) ** 2 + (hsy - sy) ** 2 < (HIT_TOLERANCE * 1.4) ** 2) return h.pos;
+  }
+  return null;
+}
+
+const SCALE_CURSORS: Record<HandlePos, string> = {
+  nw: "nwse-resize", n: "ns-resize", ne: "nesw-resize", e: "ew-resize",
+  se: "nwse-resize", s: "ns-resize", sw: "nesw-resize", w: "ew-resize",
+};
+
+function drawSelectionBox(ctx: CanvasRenderingContext2D, bb: BBox, mode: SelectHandleMode) {
+  const z = zoom.value;
+  const ox = panX.value;
+  const oy = panY.value;
+
+  // Dashed rectangle
+  ctx.strokeStyle = "rgba(99,102,241,0.6)";
+  ctx.lineWidth = 1;
+  ctx.setLineDash([5, 4]);
+  ctx.strokeRect(
+    bb.minX * z + ox, bb.minY * z + oy,
+    (bb.maxX - bb.minX) * z, (bb.maxY - bb.minY) * z,
+  );
+  ctx.setLineDash([]);
+
+  const handles = bboxHandles(bb);
+  const hSize = 4;
+
+  if (mode === "scale") {
+    for (const h of handles) {
+      const hx = h.x * z + ox;
+      const hy = h.y * z + oy;
+      ctx.fillStyle = "#6366f1";
+      ctx.fillRect(hx - hSize, hy - hSize, hSize * 2, hSize * 2);
+      ctx.strokeStyle = "rgba(255,255,255,0.8)";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(hx - hSize, hy - hSize, hSize * 2, hSize * 2);
+    }
+  } else {
+    // Rotation: curved arrows at corners
+    const corners: HandlePos[] = ["nw", "ne", "se", "sw"];
+    for (const h of handles) {
+      if (!corners.includes(h.pos)) continue;
+      const hx = h.x * z + ox;
+      const hy = h.y * z + oy;
+      const dx = h.pos.includes("e") ? 8 : -8;
+      const dy = h.pos.includes("s") ? 8 : -8;
+      ctx.beginPath();
+      ctx.arc(hx + dx, hy + dy, 6, 0, Math.PI * 1.5);
+      ctx.strokeStyle = "#6366f1";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      // Arrow tip
+      const tipX = hx + dx + Math.cos(Math.PI * 1.5) * 6;
+      const tipY = hy + dy + Math.sin(Math.PI * 1.5) * 6;
+      ctx.beginPath();
+      ctx.moveTo(tipX, tipY);
+      ctx.lineTo(tipX + 4, tipY - 2);
+      ctx.lineTo(tipX + 1, tipY + 3);
+      ctx.closePath();
+      ctx.fillStyle = "#6366f1";
+      ctx.fill();
+    }
+  }
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 /** Active path shortcut (may be null) */
 function ap(): BezierPath | null { return activePath.value; }
+
+/** Snapshot node positions + handles for drag transforms */
+function snapshotNodes(p: BezierPath) {
+  dragNodeStartPositions.clear();
+  for (const n of p.nodes) {
+    dragNodeStartPositions.set(n.id, {
+      x: n.x, y: n.y,
+      hInX: n.handleIn.x, hInY: n.handleIn.y,
+      hOutX: n.handleOut.x, hOutY: n.handleOut.y,
+    });
+  }
+}
 
 function dist(a: Vec2, b: Vec2): number {
   return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
@@ -225,6 +367,20 @@ function _drawImmediate() {
     ctx2.strokeRect(bx, by, bw, bh);
     ctx2.setLineDash([]);
   }
+
+  // Selection box with handles (selector tool)
+  if (activeTool.value === "select" && selectedIds.size > 0) {
+    const p = ap();
+    if (p) {
+      const bb = getPathBBox(p);
+      if (bb) {
+        const ctx2 = c.getContext("2d")!;
+        const dpr = window.devicePixelRatio || 1;
+        ctx2.setTransform(dpr, 0, 0, dpr, 0, 0);
+        drawSelectionBox(ctx2, bb, selectHandleMode.value);
+      }
+    }
+  }
 }
 
 // ── Cursor ───────────────────────────────────────────────────────────────────
@@ -240,6 +396,8 @@ function updateCursor(
     if (dragTarget.kind === "node") { el.style.cursor = "grabbing"; return; }
     if (dragTarget.kind === "handleIn" || dragTarget.kind === "handleOut") { el.style.cursor = "grabbing"; return; }
     if (dragTarget.kind === "boxSelect") { el.style.cursor = "crosshair"; return; }
+    if (dragTarget.kind === "scaleHandle") { el.style.cursor = SCALE_CURSORS[dragTarget.pos]; return; }
+    if (dragTarget.kind === "rotateHandle") { el.style.cursor = "grabbing"; return; }
   }
   if (activeTool.value === "select") {
     if (nodeHit || handleHit) { el.style.cursor = "grab"; return; }
@@ -269,49 +427,73 @@ function onPointerDown(e: MouseEvent) {
 
   if (e.button !== 0) return;
 
-  // ── Select tool: whole-path select & move ────────────────────────────
+  // ── Select tool: whole-path select, move, scale, rotate ────────────
   if (activeTool.value === "select") {
-    // Hit any path (active first, then inactive)
+    const p = ap();
+    const bb = p ? getPathBBox(p) : null;
+
+    // 1) Hit-test selection handles first (if path is selected)
+    if (p && bb && selectedIds.size > 0) {
+      const handleHit = hitBBoxHandle(screenPos.x, screenPos.y, bb, selectHandleMode.value);
+      if (handleHit) {
+        pushUndo();
+        snapshotNodes(p);
+        if (selectHandleMode.value === "scale") {
+          dragTarget = { kind: "scaleHandle", pos: handleHit, bbox: { ...bb }, startMouse: worldPos };
+        } else {
+          const center = bboxCenter(bb);
+          const startAngle = Math.atan2(worldPos.y - center.y, worldPos.x - center.x);
+          dragTarget = { kind: "rotateHandle", pos: handleHit, bbox: { ...bb }, startAngle };
+        }
+        dragStartPos = worldPos;
+        draw();
+        return;
+      }
+    }
+
+    // 2) Hit active path → toggle handle mode on re-click, or drag to move
     const nodeHit = hitTestNode(worldPos.x, worldPos.y);
     const segHit = hitTestSegment(worldPos.x, worldPos.y);
     const inactiveHit = hitTestInactivePath(worldPos.x, worldPos.y);
 
     if (nodeHit || segHit) {
-      // Clicked on active path — select all nodes, prepare to drag
-      const p = ap();
-      if (p) {
+      if (p && selectedIds.size > 0) {
+        // Already selected → toggle scale/rotate mode
+        selectHandleMode.value = selectHandleMode.value === "scale" ? "rotate" : "scale";
+      } else if (p) {
         selectAll();
+        selectHandleMode.value = "scale";
+      }
+      // Also allow dragging
+      if (p) {
         pushUndo();
         dragTarget = { kind: "node", id: p.nodes[0]?.id ?? "" };
         dragStartPos = worldPos;
-        dragNodeStartPositions.clear();
-        for (const n of p.nodes) {
-          dragNodeStartPositions.set(n.id, { x: n.x, y: n.y });
-        }
+        snapshotNodes(p);
       }
       draw();
       return;
     }
 
+    // 3) Hit inactive path → switch to it
     if (inactiveHit !== null) {
       setActivePath(inactiveHit);
-      const p = ap();
-      if (p) {
+      const np = ap();
+      if (np) {
         selectAll();
+        selectHandleMode.value = "scale";
         pushUndo();
-        dragTarget = { kind: "node", id: p.nodes[0]?.id ?? "" };
+        dragTarget = { kind: "node", id: np.nodes[0]?.id ?? "" };
         dragStartPos = worldPos;
-        dragNodeStartPositions.clear();
-        for (const n of p.nodes) {
-          dragNodeStartPositions.set(n.id, { x: n.x, y: n.y });
-        }
+        snapshotNodes(np);
       }
       draw();
       return;
     }
 
-    // Click empty → deselect
+    // 4) Click empty → deselect
     deselectAll();
+    selectHandleMode.value = "scale";
     draw();
     return;
   }
@@ -345,7 +527,11 @@ function onPointerDown(e: MouseEvent) {
     if (p) {
       for (const n of p.nodes) {
         if (selectedIds.has(n.id)) {
-          dragNodeStartPositions.set(n.id, { x: n.x, y: n.y });
+          dragNodeStartPositions.set(n.id, {
+            x: n.x, y: n.y,
+            hInX: n.handleIn.x, hInY: n.handleIn.y,
+            hOutX: n.handleOut.x, hOutY: n.handleOut.y,
+          });
         }
       }
     }
@@ -418,6 +604,58 @@ function onPointerMove(e: MouseEvent) {
     } else if (dragTarget.kind === "boxSelect") {
       dragTarget.curX = screenPos.x;
       dragTarget.curY = screenPos.y;
+    } else if (dragTarget.kind === "scaleHandle" && p) {
+      // Scale around bbox center
+      const bb = dragTarget.bbox;
+      const center = bboxCenter(bb);
+      const hw = (bb.maxX - bb.minX) / 2;
+      const hh = (bb.maxY - bb.minY) / 2;
+      const dx = worldPos.x - center.x;
+      const dy = worldPos.y - center.y;
+      const sdx = dragTarget.startMouse.x - center.x;
+      const sdy = dragTarget.startMouse.y - center.y;
+      // Compute scale factors based on handle position
+      let sx = 1, sy = 1;
+      const pos = dragTarget.pos;
+      if (pos.includes("e") || pos.includes("w")) {
+        sx = hw > 0.1 ? Math.max(0.01, Math.abs(dx) / hw) * Math.sign(dx) * (sdx > 0 ? 1 : -1) : 1;
+      }
+      if (pos.includes("n") || pos.includes("s")) {
+        sy = hh > 0.1 ? Math.max(0.01, Math.abs(dy) / hh) * Math.sign(dy) * (sdy > 0 ? 1 : -1) : 1;
+      }
+      // Corner handles scale uniformly when shift is held (or always uniform for corners)
+      if ((pos === "nw" || pos === "ne" || pos === "se" || pos === "sw") && !e.shiftKey) {
+        const avg = (Math.abs(sx) + Math.abs(sy)) / 2;
+        sx = avg * Math.sign(sx);
+        sy = avg * Math.sign(sy);
+      }
+      if (pos === "n" || pos === "s") sx = 1;
+      if (pos === "e" || pos === "w") sy = 1;
+      for (const n of p.nodes) {
+        const sp = dragNodeStartPositions.get(n.id);
+        if (!sp) continue;
+        n.x = center.x + (sp.x - center.x) * sx;
+        n.y = center.y + (sp.y - center.y) * sy;
+        n.handleIn  = { x: sp.hInX * sx,  y: sp.hInY * sy };
+        n.handleOut = { x: sp.hOutX * sx, y: sp.hOutY * sy };
+      }
+    } else if (dragTarget.kind === "rotateHandle" && p) {
+      // Rotate around bbox center
+      const center = bboxCenter(dragTarget.bbox);
+      const curAngle = Math.atan2(worldPos.y - center.y, worldPos.x - center.x);
+      const delta = curAngle - dragTarget.startAngle;
+      const cosD = Math.cos(delta);
+      const sinD = Math.sin(delta);
+      for (const n of p.nodes) {
+        const sp = dragNodeStartPositions.get(n.id);
+        if (!sp) continue;
+        const rx = sp.x - center.x;
+        const ry = sp.y - center.y;
+        n.x = center.x + rx * cosD - ry * sinD;
+        n.y = center.y + rx * sinD + ry * cosD;
+        n.handleIn  = { x: sp.hInX * cosD - sp.hInY * sinD,  y: sp.hInX * sinD + sp.hInY * cosD };
+        n.handleOut = { x: sp.hOutX * cosD - sp.hOutY * sinD, y: sp.hOutX * sinD + sp.hOutY * cosD };
+      }
     }
 
     draw();
@@ -429,11 +667,25 @@ function onPointerMove(e: MouseEvent) {
   const handleHitHover = activeTool.value === "node" ? hitTestHandle(worldPos.x, worldPos.y) : null;
   if (hoveredId.value !== nodeHit) { hoveredId.value = nodeHit; draw(); }
 
-  // In select mode, also detect hovering on inactive paths for cursor
-  if (activeTool.value === "select" && !nodeHit) {
-    const inactiveHit = hitTestInactivePath(worldPos.x, worldPos.y);
+  // In select mode, check bbox handles first, then paths
+  if (activeTool.value === "select") {
     const el = canvasEl.value;
-    if (el) el.style.cursor = inactiveHit !== null ? "grab" : "default";
+    if (!el) return;
+    const p = ap();
+    const bb = p && selectedIds.size > 0 ? getPathBBox(p) : null;
+    if (bb) {
+      const hh = hitBBoxHandle(screenPos.x, screenPos.y, bb, selectHandleMode.value);
+      if (hh) {
+        el.style.cursor = selectHandleMode.value === "scale" ? SCALE_CURSORS[hh] : "grab";
+        return;
+      }
+    }
+    if (nodeHit) {
+      el.style.cursor = "grab";
+    } else {
+      const inactiveHit = hitTestInactivePath(worldPos.x, worldPos.y);
+      el.style.cursor = inactiveHit !== null ? "grab" : "default";
+    }
   } else {
     updateCursor(nodeHit, handleHitHover);
   }
@@ -531,7 +783,7 @@ function fitCanvas() {
 watch(paths, () => draw(), { deep: true });
 watch(activePathIndex, () => draw());
 watch(spiralBlendMode, () => draw());
-watch(activeTool, () => draw());
+watch(activeTool, () => { selectHandleMode.value = "scale"; draw(); });
 watch(spiralBlendMode, () => draw());
 watch(spiralCursorT, () => draw());
 
